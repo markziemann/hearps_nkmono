@@ -1,0 +1,271 @@
+---
+title: "Single cell transcriptomes of nk mono cells with HIV 2023"
+author: "Burnet Bioinformatics group"
+date: "`r Sys.Date()`"
+output:
+  html_document:
+    toc: true
+    toc_float: true
+    fig_width: 7
+    fig_height: 7
+theme: cosmo
+---
+
+## Introduction
+
+There are 3 samples.
+
+1. 1-17032023-GEX
+
+2. 2-09032023-GEX
+
+3. 3-13032023-GEX
+
+I had to make a new custom reference genome with the HIV sequence.
+
+```{r,libs}
+
+suppressPackageStartupMessages({
+  library("plyr")
+  library("Seurat")
+  library("hdf5r")
+  library("SingleCellExperiment")
+  library("parallel")
+  library("stringi")
+  library("beeswarm")
+  library("muscat")
+  library("DESeq2")
+  library("mitch")
+})
+
+```
+
+## Load data
+
+Load the h5 matrices.
+
+```{r,load1}
+
+counts1 <- Read10X_h5("res_1-17032023-GEX/outs/filtered_feature_bc_matrix.h5")
+counts2 <- Read10X_h5("res_2-09032023-GEX/outs/filtered_feature_bc_matrix.h5")
+counts3 <- Read10X_h5("res_3-13032023-GEX/outs/filtered_feature_bc_matrix.h5")
+
+```
+
+Examine human and HIV reads.
+
+HIV is located in the top 2 rows.
+One fwd strand and one negative strand.
+
+```{r,hivcounts}
+
+dim(counts1)
+dim(counts2)
+dim(counts3)
+
+summary(colSums(counts1))
+summary(colSums(counts2))
+summary(colSums(counts3))
+
+sum(colSums(counts1))
+sum(colSums(counts2))
+sum(colSums(counts3))
+
+colnames(counts1) <- gsub("-1","",colnames(counts1))
+colnames(counts2) <- gsub("-1","",colnames(counts2))
+colnames(counts3) <- gsub("-1","",colnames(counts3))
+
+counts1[1:10,1:5]
+head(colSums(counts1))
+
+```
+
+Write the cell barcodes to a file for the CITE-Seq-count program.
+
+```{r,writewhitelist}
+
+countbc1 <- colnames(counts1)
+writeLines(countbc1,con="cell_barcodes1.txt")
+
+countbc2 <- colnames(counts2)
+writeLines(countbc2,con="cell_barcodes2.txt")
+
+countbc3 <- colnames(counts3)
+writeLines(countbc3,con="cell_barcodes3.txt")
+
+```
+
+Now read HTO data.
+
+It is strange that HTO cell barcodes do not appear to be common with the main RNA-seq counts.
+
+```{r,htoread1}
+
+hto1 <- Read10X("hto_count/1-17032023-HTO/read_count/", gene.column=1)
+hto2 <- Read10X("hto_count/2-09032023-HTO/read_count/", gene.column=1)
+hto3 <- Read10X("hto_count/3-13032023-HTO/read_count/", gene.column=1)
+
+dim(hto1)
+hto1[,1:20]
+
+dim(counts1)
+dim(hto1)
+
+str(which(colnames(counts1) %in% colnames(hto1)))
+str(which(colnames(counts2) %in% colnames(hto2)))
+str(which(colnames(counts3) %in% colnames(hto3)))
+
+```
+
+Previously there appears only to be 10 cell barcodes in common.
+To fix this, I obtained the cell barcode whitelist after running cellranger.
+I then used this whitelist for CITE-Seq-count with a tolerance of 2 sequence mismatches.
+
+## Remove low HTO counts
+
+```{r,htofilt1}
+
+summary(colSums(hto1))
+hto1 <- hto1[,which(colSums(hto1)>=100)]
+hto2 <- hto2[,which(colSums(hto2)>=100)]
+hto3 <- hto3[,which(colSums(hto3)>=100)]
+
+# look at the proportion unmapped
+summary(apply(hto1,2,function(x) {x[6]/sum(x) } ) )
+summary(apply(hto2,2,function(x) {x[6]/sum(x) } ) )
+summary(apply(hto3,2,function(x) {x[6]/sum(x) } ) )
+
+```
+
+## Identify ambiguous HTO counts
+
+For each cell barcode, calculate the ratio of top BC to 2nd BC.
+
+```{r,htodoublets1}
+
+getratio <- function(mx){
+  res <- lapply(1:ncol(mx), function(i) {
+    cnt <- mx[,i]
+    top1 <- cnt[order(-cnt)][1]+1
+    top2 <- cnt[order(-cnt)][2]+1
+    top1/top2
+  })
+  return(unlist(res))
+}
+
+ratio1 <- getratio(hto1)
+summary(unlist(ratio1))
+length(which(ratio1>3))
+hto1 <- hto1[,which(ratio1>3)]
+
+ratio2 <- getratio(hto2)
+summary(unlist(ratio2))
+length(which(ratio2>3))
+hto2 <- hto2[,which(ratio2>3)]
+
+ratio3 <- getratio(hto3)
+summary(unlist(ratio3))
+length(which(ratio3>3))
+hto3 <- hto3[,which(ratio3>3)]
+
+```
+
+## Match 
+
+```{r,match1}
+
+itx1 <- intersect(colnames(counts1),colnames(hto1))
+dim(counts1)
+counts1 <- counts1[,itx1]
+dim(counts1)
+hto1 <- hto1[,itx1]
+dim(hto1)
+
+itx2 <- intersect(colnames(counts2),colnames(hto2))
+dim(counts2)
+counts2 <- counts2[,itx2]
+dim(counts2)
+hto2 <- hto2[,itx2]
+dim(hto2)
+
+itx3 <- intersect(colnames(counts3),colnames(hto3))
+dim(counts3)
+counts3 <- counts3[,itx3]
+dim(counts3)
+hto3 <- hto3[,itx3]
+dim(hto3)
+
+```
+
+## Get demux result
+
+| Sample | Plate | HTO |
+| --- | --- | --- |
+| CC0003 | 1 | 1 |
+| AH0018 | 1 | 3 |
+| PM008 | 1 | 4 |
+| PM017 | 1 | 5 |
+| PM0032 | 2 | 1 |
+| PM0028 | 2 | 2 |
+| AH0005 | 2 | 3 |
+| AH0015 | 2 | 4 |
+| PM0027 | 3 | 2 |
+| PM0020 | 3 | 3 |
+| PM001 | 3 | 4 |
+| CC0016 | 3 | 5 |
+
+```{r,demuxresult1}
+
+table(apply(hto1,2,function(x) { order(-x) } )[1,] )
+idx1 <- apply(hto1,2,function(x) { order(-x) } )[1,]
+c1h1 <- counts1[,which(idx1==1)] # CC0003
+c1h3 <- counts1[,which(idx1==3)] # AH0018
+c1h4 <- counts1[,which(idx1==4)] # PM008
+c1h5 <- counts1[,which(idx1==5)] # PM017
+
+table(apply(hto2,2,function(x) { order(-x) } )[1,] )
+idx2 <- apply(hto2,2,function(x) { order(-x) } )[1,]
+c2h1 <- counts2[,which(idx2==1)] # PM0032
+c2h2 <- counts2[,which(idx2==2)] # PM0028
+c2h3 <- counts2[,which(idx2==3)] # AH0005
+c2h4 <- counts2[,which(idx2==4)] # AH0015
+
+table(apply(hto3,2,function(x) { order(-x) } )[1,] )
+idx3 <- apply(hto3,2,function(x) { order(-x) } )[1,]
+c3h2 <- counts3[,which(idx3==2)] # PM0027
+c3h3 <- counts3[,which(idx3==3)] # PM0020
+c3h4 <- counts3[,which(idx3==4)] # PM001
+c3h5 <- counts3[,which(idx3==5)] # CC0016
+
+colnames(c1h1) <- paste("CC0003",colnames(c1h1))
+colnames(c1h3) <- paste("AH0018",colnames(c1h3))
+colnames(c1h4) <- paste("PM008",colnames(c1h4))
+colnames(c1h5) <- paste("PM017",colnames(c1h5))
+
+colnames(c2h1) <- paste("PM0032",colnames(c2h1))
+colnames(c2h2) <- paste("PM0028",colnames(c2h2))
+colnames(c2h3) <- paste("AH0005",colnames(c2h3))
+colnames(c2h4) <- paste("AH0015",colnames(c2h4))
+
+colnames(c3h2) <- paste("PM0027",colnames(c3h2))
+colnames(c3h3) <- paste("PM0020",colnames(c3h3))
+colnames(c3h4) <- paste("PM001",colnames(c3h4))
+colnames(c3h5) <- paste("CC0016",colnames(c3h5))
+
+comb <- cbind(c1h1,c1h3,c1h4,c1h5,c2h1,c2h2,c2h3,c2h4,c3h2,c3h3,c3h4,c3h5)
+
+```
+
+Convert data to summarised experiment object and save.
+
+```{r,summ_exp_convert}
+
+sce <- SingleCellExperiment(list(counts=comb))
+
+sce
+
+saveRDS(sce,"combined_counts.rds")
+
+save.image("scanalyse1.Rdata")
+
+```

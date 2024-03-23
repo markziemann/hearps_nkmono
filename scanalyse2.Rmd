@@ -1,0 +1,651 @@
+---
+title: "Single cell transcriptomes of nk mono cells with HIV 2023"
+author: "Burnet Bioinformatics group"
+date: "`r Sys.Date()`"
+output:
+  html_document:
+    toc: true
+    toc_float: true
+    fig_width: 7
+    fig_height: 7
+theme: cosmo
+---
+
+## Introduction
+
+There are 3 samples.
+
+1. 1-17032023-GEX
+
+2. 2-09032023-GEX
+
+3. 3-13032023-GEX
+
+I had to make a new custom reference genome with the HIV sequence.
+
+```{r,libs}
+
+suppressPackageStartupMessages({
+  library("plyr")
+  library("Seurat")
+  library("hdf5r")
+  library("SingleCellExperiment")
+  library("parallel")
+  library("stringi")
+  library("beeswarm")
+  library("muscat")
+  library("DESeq2")
+  library("mitch")
+})
+
+```
+
+Load data.
+
+```{r,load}
+
+load("scanalyse1.Rdata")
+
+```
+
+## Normalise data
+
+```{r,norm1}
+
+cellmetadata <- data.frame(colnames(comb) ,sapply(strsplit(colnames(comb)," "),"[[",1))
+colnames(cellmetadata) <- c("cell","patient")
+comb <- CreateSeuratObject(comb, project = "nkmono", assay = "RNA", meta.data = cellmetadata)
+comb <- NormalizeData(comb)
+comb <- FindVariableFeatures(comb, selection.method = "vst", nfeatures = 2000)
+comb <- ScaleData(comb)
+
+```
+
+## PCA and Cluster
+
+```{r,pca1}
+
+comb <- RunPCA(comb, features = VariableFeatures(object = comb))
+DimHeatmap(comb, dims = 1, cells = 500, balanced = TRUE)
+ElbowPlot(comb)
+comb <- JackStraw(comb, num.replicate = 100)
+comb <- FindNeighbors(comb, dims = 1:8)
+comb <- FindClusters(comb, resolution = 0.1)
+
+
+```
+
+## UMAP
+
+```{r,umap}
+
+comb <- RunUMAP(comb, dims = 1:8)
+DimPlot(comb, reduction = "umap")
+
+```
+
+## Assign cell type with canonical markers
+
+| Cluster ID | Markers | Cell Type |
+| --- | --- | --- |
+| 0 | IL7R, CCR7 | Naive CD4+ T |
+| 1 | CD14, LYZ | CD14+ Mono |
+| 2 | IL7R, S100A4 | Memory CD4+ |
+| 3 | MS4A1 | B |
+| 4 | CD8A | CD8+ T |
+| 5 | FCGR3A, MS4A7 | FCGR3A+ Mono |
+| 6 | GNLY, NKG7 | NK |
+| 7 | FCER1A, CST3 | DC |
+| 8 | PPBP | Platelet |
+
+```{r,assign}
+
+message("Naive CD4+ T")
+VlnPlot(comb, features = c("IL7R", "CCR7"))
+
+message("CD14+ Mono")
+VlnPlot(comb, features = c("CD14", "LYZ"))
+
+message("Memory CD4+")
+VlnPlot(comb, features = c("IL7R", "S100A4"))
+
+message("B")
+VlnPlot(comb, features = c("MS4A1"))
+
+message("CD8+ T")
+VlnPlot(comb, features = c("CD8A"))
+
+message("FCGR3A+ Mono")
+VlnPlot(comb, features = c("FCGR3A", "MS4A7"))
+
+message("NK")
+VlnPlot(comb, features = c("GNLY", "NKG7"))
+
+message("DC")
+VlnPlot(comb, features = c("FCER1A", "CST3"))
+
+message("Platelet")
+VlnPlot(comb, features = c("PPBP"))
+
+new.cluster.ids <- c("Naive CD4 T", "CD14+ Mono", "Memory CD4 T", "B", "CD8 T", "FCGR3A+ Mono",
+    "NK", "DC", "Platelet")
+
+FeaturePlot(comb, features = c("MS4A1", "GNLY", "CD3E", "CD14", "FCER1A", "FCGR3A", "LYZ", "PPBP",
+    "CD8A"))
+
+#names(new.cluster.ids) <- levels(comb)
+
+```
+
+
+Now get the marker genes for each cluster.
+
+
+```{r,markers1}
+
+myvec <- unique(comb[["seurat_clusters"]][,1])
+
+markers <- mclapply(myvec, function(i) { FindMarkers(comb, ident.1 = i ) } , mc.cores=16)
+
+length(markers)
+
+# NK 1 (cluster 0)
+head(markers[[1]],10)
+
+# CD14+ monocytes 1 (cluster 1)
+head(markers[[2]],10)
+
+# NK 2 (cluster 2)
+head(markers[[3]],10)
+
+# CD14+ monocytes 2 (cluster 3)
+head(markers[[4]],10)
+
+# FCGR3A+ monocytes (cluster 4)
+head(markers[[5]],10)
+
+# cluster 5 unknown - probably T cell
+# IL7R = Naive T-cells
+# CD3D = CD4+ T cells
+# CD3E = T cells
+head(markers[[6]],10)
+
+# DC (cluster 6)
+head(markers[[7]],10)
+
+# cluster 7 unknown - probably macrophage
+# CD14 = macrophages
+# S100A12 = macrophages and monocytes
+# MS4A6A = macrophages and monocytes
+head(markers[[8]],10)
+
+# B cells (cluster 8)
+head(markers[[9]],10)
+
+```
+
+As there are two CD14+ mono and NK clusters, it might be a good idea to
+look at their differences.
+
+```{r,markers2}
+
+# find all NK markers distinguishing cluster 0 (case) from cluster 2 (ctrl)
+nk0.markers <- FindMarkers(comb, ident.1 = 0, ident.2 = 2,only.pos=TRUE)
+head(nk0.markers, n = 10)
+
+nk2.markers <- FindMarkers(comb, ident.1 = 2, ident.2 = 0,only.pos=TRUE)
+head(nk2.markers, n = 10)
+
+# find all monocyte markers distinguishing cluster 1 (case) from cluster 3 (ctrl)
+monocyte1.markers <- FindMarkers(comb, ident.1 = 1, ident.2 = 3, only.pos=TRUE)
+head(monocyte1.markers, n = 10)
+
+monocyte3.markers <- FindMarkers(comb, ident.1 = 3, ident.2 = 1, only.pos=TRUE)
+head(monocyte3.markers, n = 10)
+
+```
+
+## Assign names to clusters
+
+0. NK 1 (FCGR3A+)
+
+1. CD14+ monocytes
+
+2. NK 2 (IL7R+)
+
+3. CD14+ monocytes (CCL4+)
+
+4. FCGR3A+ monocytes
+
+5. T
+
+6. DC
+
+7. macrophages
+
+8. B
+
+```{r,namingclusters}
+
+new.cluster.ids <- c("NK 1 (FCGRA3A+)", "CD14+ Mono", "NK 2 (IL7R+)", "CD14+ Mono (CCL4+)", "FCGR3A+ Mono", "T",
+    "DC", "Macrophage", "B")
+
+names(new.cluster.ids) <- levels(comb)
+
+comb <- RenameIdents(comb, new.cluster.ids)
+
+DimPlot(comb, reduction = "umap", label = TRUE, pt.size = 0.5) + NoLegend()
+
+```
+
+## count cells by patient
+
+| Sample | Plate | HTO |
+| --- | --- | --- |
+| CC0003 | 1 | 1 |
+| AH0018 | 1 | 3 |
+| PM008 | 1 | 4 |
+| PM017 | 1 | 5 |
+| PM0032 | 2 | 1 |
+| PM0028 | 2 | 2 |
+| AH0005 | 2 | 3 |
+| AH0015 | 2 | 4 |
+| PM0027 | 3 | 2 |
+| PM0020 | 3 | 3 |
+| PM001 | 3 | 4 |
+| CC0016 | 3 | 5 |
+
+```{r,count1}
+
+str(Idents(comb))
+
+table(Idents(comb))
+
+cells <- paste(Idents(comb),names(Idents(comb)))
+
+cells2 <- strsplit((stringi::stri_reverse(cells)), " ")
+cells2 <- lapply(cells2,function(x) { stringi::stri_reverse(paste(x[2:length(x)],collapse=" "))})
+cells2 <- table(unlist(cells2))
+
+cmx <- matrix(cells2,nrow=12)
+colnames(cmx) <- new.cluster.ids
+
+patient_id <- c("AH0005+","AH0015+","AH0018+","CC0003-","CC0016+","PM001+","PM0020-","PM0027-","PM0028-","PM0032-","PM008+","PM017+")
+hiv_status <- c(1,1,1,0,1,1,0,0,0,0,1,1)
+pat_df <- data.frame(patient_id,hiv_status)
+pat_df
+
+rownames(cmx) <- patient_id
+
+tcmx <- t(cmx)
+
+tcmx %>% kbl(caption="cell counts") %>% kable_paper("hover", full_width = F)
+
+ntcmx <- apply(tcmx,2,function(x) { x/sum(x)*100 } )
+
+ntcmx %>% kbl(caption="cell proportions") %>% kable_paper("hover", full_width = F)
+
+tntcmx <- t(ntcmx)
+
+tntcmx %>% kbl(caption="cell proportions") %>% kable_paper("hover", full_width = F)
+
+tntcmx_pos <- tntcmx[grep("\\+",rownames(tntcmx)),]
+
+tntcmx_neg <- tntcmx[grep("\\-",rownames(tntcmx)),]
+
+par(mfrow=c(3,3))
+
+lapply(1:ncol(cmx) , function(i) {
+  cellname=colnames(tntcmx)[i]
+  boxplot(tntcmx_neg[,i],tntcmx_pos[,i],col="white",main=cellname, names=c("HIV-","HIV+"))
+  beeswarm(list(tntcmx_neg[,i],tntcmx_pos[,i]),add=TRUE,cex=1.5,col="gray",pch=19)
+  tt <- t.test(tntcmx_neg[,i],tntcmx_pos[,i])
+  mtext(paste("P=",signif(tt$p.value,3)),cex=0.8)
+})
+
+summary(tntcmx_neg)
+summary(tntcmx_pos)
+ttres <- lapply(1:ncol(cmx) , function(i) {
+  t.test(tntcmx_neg[,i],tntcmx_pos[,i])
+})
+names(ttres) <- colnames(cmx)
+ttres
+
+par(mfrow=c(1,1))
+
+```
+
+There were no significant results of the cell counting, however there were some trends that might require further investigation.
+In particular relative counts of IL7R+ NK 2 cells were lower, CCL4+ CD14+ Monocytes were lower, while DCs were higher in HIV+
+patients.
+
+## Differential expression
+
+We are going to use muscat for pseudobulk analysis.
+First need to convert seurat obj to singlecellexperiment object.
+Then summarise counts to pseudobulk level.
+
+```{r,pb}
+
+sce <- Seurat::as.SingleCellExperiment(comb, assay = "RNA")
+
+head(colData(sce),2)
+
+colnames(colData(sce))
+
+patient_id <- c("AH0005","AH0015","AH0018","CC0003","CC0016","PM001","PM0020","PM0027","PM0028","PM0032","PM008","PM017")
+hiv_status <- c(1,1,1,0,1,1,0,0,0,0,1,1)
+pat_df <- data.frame(patient_id,hiv_status)
+
+colData(sce)$sample_id <- colData(sce)$patient
+colData(sce)$cluster_id <- colData(sce)$ident
+colData(sce)$hiv <- pat_df[match(colData(sce)$patient,pat_df$patient_id),2]
+
+#muscat library
+pb <- aggregateData(sce,
+    assay = "counts", fun = "sum",
+    by = c("cluster_id", "sample_id"))
+
+# one sheet per subpopulation
+assayNames(pb)
+
+t(head(assay(pb)))
+
+plotMDS(assay(pb))
+
+par(mfrow=c(3,3))
+
+lapply(1:length(assays(pb)) , function(i) {
+  cellname=names(assays(pb))[i]
+  plotMDS(assays(pb)[[i]],cex=1.5,pch=19,col=hiv_status+1,main=paste(cellname))
+  mtext("red=HIV+",cex=0.7)
+})
+
+par(mfrow=c(1,1))
+
+lapply(1:length(assays(pb)) , function(i) {
+  cellname=names(assays(pb))[i]
+  plotMDS(assays(pb)[[i]],cex=1.5,pch=19,labels=patient_id,col=hiv_status+1,main=paste("MDS",cellname,"red=HIV+"))
+})
+
+plotMDS(assays(pb)[[1]],cex=1.5,labels=patient_id,col=hiv_status+1,main="MDS red=HIV+")
+
+```
+
+Differential expression.
+
+```{r,de1}
+
+rownames(pat_df) <- pat_df[,1]
+
+deres <- lapply(1:length(assays(pb)), function(i) {
+  counts <- assays(pb)[[i]]
+  cellname <- names(assays(pb))[i]
+  fcounts <- counts[which(rowMeans(counts)>=5),]
+  dds <- DESeqDataSetFromMatrix(countData = fcounts , colData = pat_df, design = ~ hiv_status)
+  res <- DESeq(dds)
+  z <- results(res)
+  vsd <- vst(dds, blind=FALSE)
+  zz<-cbind(as.data.frame(z),assay(vsd))
+  de <- as.data.frame(zz[order(zz$pvalue),])
+  return(de)
+})
+
+names(deres) <- names(assays(pb))
+
+if ( ! dir.exists("de_analysis") {
+  dir.create("de_analysis")
+}
+
+lapply(1:length(assays(pb)),function(i) {
+  cellname=names(assays(pb))[[i]]
+  myres <- deres[[i]]
+  filename <- paste(cellname,".tsv",sep="")
+  filename <- gsub("\\)","",gsub("\\(","",gsub(" ","_",filename)))
+  filename <- paste("de_analysis/",filename,sep="")
+  write.table(x=myres,file=filename,sep="\t",quote=FALSE)
+})
+
+```
+
+## Pathway analysis
+
+Using mitch package with gene ontology terms.
+
+```{r,mitch1}
+
+go <- gmt_import("c5.go.v2023.2.Hs.symbols.gmt")
+names(go) <- gsub("_"," ",names(go))
+
+deres
+
+# mitch multi
+m0 <- mitch_import(deres,DEtype="deseq2",joinType="full")
+summary(m0)
+mres0 <- mitch_calc(m0,genesets=go,minsetsize=5,cores=16,priority="effect")
+mres0 <- head(mres0$enrichment_result)
+mres0 <- subset(mres0,p.adjustMANOVA<0.05)
+head(mres0)
+
+```
+
+mitch single
+
+
+```{r,mitch2}
+
+par(mfrow=c(1,1))
+
+message("NK 1 (FCGRA3A+)")
+m1 <- mitch_import(deres[[1]],DEtype="deseq2",joinType="full")
+mres1 <- mitch_calc(m1,genesets=go,minsetsize=5,cores=16,priority="effect")
+res <- mres1$enrichment_result
+res <- subset(res,p.adjustANOVA<0.05)
+resup <- subset(res,s.dist>0)
+resdn <- subset(res,s.dist<0)
+head(resup,10)
+head(resdn,10)
+s <- c(head(resup$s.dist,10), head(resdn$s.dist,10))
+names(s) <- c(head(resup$set,10),head(resdn$set,10))
+s <- s[order(s)]
+cols <- gsub("1","red",gsub("-1","blue",as.character(sign(s))))
+par(mar=c(5,27,3,1))
+barplot(abs(s),las=1,horiz=TRUE,col=cols,xlab="ES",cex.names=0.8,main="NK 1 (FCGRA3A+)")
+if (! file.exists("NK1.html") ) { mitch_report(mres1,outfile="NK1.html") }
+
+message("CD14+ Mono")
+m2 <- mitch_import(deres[[2]],DEtype="deseq2",joinType="full")
+mres2 <- mitch_calc(m2,genesets=go,minsetsize=5,cores=16,priority="effect")
+res <- mres2$enrichment_result
+res <- subset(res,p.adjustANOVA<0.05)
+resup <- subset(res,s.dist>0)
+resdn <- subset(res,s.dist<0)
+head(resup,10)
+head(resdn,10)
+s <- c(head(resup$s.dist,10), head(resdn$s.dist,10))
+names(s) <- c(head(resup$set,10),head(resdn$set,10))
+s <- s[order(s)]
+cols <- gsub("1","red",gsub("-1","blue",as.character(sign(s))))
+par(mar=c(5,27,3,1))
+barplot(abs(s),las=1,horiz=TRUE,col=cols,xlab="ES",cex.names=0.8,main="CD14+ Mono")
+if (! file.exists("CD14mono.html") ) { mitch_report(mres1,outfile="CD14mono.html") }
+
+message("NK 2 (IL7R+)")
+m3 <- mitch_import(deres[[3]],DEtype="deseq2",joinType="full")
+mres3 <- mitch_calc(m3,genesets=go,minsetsize=5,cores=16,priority="effect")
+res <- mres3$enrichment_result
+res <- subset(res,p.adjustANOVA<0.05)
+resup <- subset(res,s.dist>0)
+resdn <- subset(res,s.dist<0)
+head(resup,10)
+head(resdn,10)
+s <- c(head(resup$s.dist,10), head(resdn$s.dist,10))
+names(s) <- c(head(resup$set,10),head(resdn$set,10))
+s <- s[order(s)]
+cols <- gsub("1","red",gsub("-1","blue",as.character(sign(s))))
+par(mar=c(5,27,3,1))
+barplot(abs(s),las=1,horiz=TRUE,col=cols,xlab="ES",cex.names=0.8,main="NK 2 (IL7R+)")
+if (! file.exists("NK2.html") ) { mitch_report(mres1,outfile="NK2.html") }
+
+message("CD14+ Mono (CCL4+)")
+m4 <- mitch_import(deres[[4]],DEtype="deseq2",joinType="full")
+mres4 <- mitch_calc(m4,genesets=go,minsetsize=5,cores=16,priority="effect")
+res <- mres4$enrichment_result
+res <- subset(res,p.adjustANOVA<0.05)
+resup <- subset(res,s.dist>0)
+resdn <- subset(res,s.dist<0)
+head(resup,10)
+head(resdn,10)
+s <- c(head(resup$s.dist,10), head(resdn$s.dist,10))
+names(s) <- c(head(resup$set,10),head(resdn$set,10))
+s <- s[order(s)]
+cols <- gsub("1","red",gsub("-1","blue",as.character(sign(s))))
+par(mar=c(5,27,3,1))
+barplot(abs(s),las=1,horiz=TRUE,col=cols,xlab="ES",cex.names=0.8,main="CD14+ Mono (CCL4+)")
+if (! file.exists("CD14monoCCL4.html") ) { mitch_report(mres1,outfile="CD14monoCCL4.html") }
+
+message("FCGR3A+ Mono")
+m5 <- mitch_import(deres[[5]],DEtype="deseq2",joinType="full")
+mres5 <- mitch_calc(m5,genesets=go,minsetsize=5,cores=16,priority="effect")
+res <- mres5$enrichment_result
+res <- subset(res,p.adjustANOVA<0.05)
+resup <- subset(res,s.dist>0)
+resdn <- subset(res,s.dist<0)
+head(resup,10)
+head(resdn,10)
+s <- c(head(resup$s.dist,10), head(resdn$s.dist,10))
+names(s) <- c(head(resup$set,10),head(resdn$set,10))
+s <- s[order(s)]
+cols <- gsub("1","red",gsub("-1","blue",as.character(sign(s))))
+par(mar=c(5,27,3,1))
+barplot(abs(s),las=1,horiz=TRUE,col=cols,xlab="ES",cex.names=0.8,main="FCGR3A+ Mono")
+if (! file.exists("FCGR3Amono.html") ) { mitch_report(mres1,outfile="FCGR3Amono.html") }
+
+message("T")
+m6 <- mitch_import(deres[[6]],DEtype="deseq2",joinType="full")
+mres6 <- mitch_calc(m6,genesets=go,minsetsize=5,cores=16,priority="effect")
+res <- mres6$enrichment_result
+res <- subset(res,p.adjustANOVA<0.05)
+resup <- subset(res,s.dist>0)
+resdn <- subset(res,s.dist<0)
+head(resup,10)
+head(resdn,10)
+s <- c(head(resup$s.dist,10), head(resdn$s.dist,10))
+names(s) <- c(head(resup$set,10),head(resdn$set,10))
+s <- s[order(s)]
+cols <- gsub("1","red",gsub("-1","blue",as.character(sign(s))))
+par(mar=c(5,27,3,1))
+barplot(abs(s),las=1,horiz=TRUE,col=cols,xlab="ES",cex.names=0.8,main="T")
+if (! file.exists("T.html") ) { mitch_report(mres1,outfile="T.html") }
+
+message("DC")
+m7 <- mitch_import(deres[[7]],DEtype="deseq2",joinType="full")
+mres7 <- mitch_calc(m7,genesets=go,minsetsize=5,cores=16,priority="effect")
+res <- mres7$enrichment_result
+res <- subset(res,p.adjustANOVA<0.05)
+resup <- subset(res,s.dist>0)
+resdn <- subset(res,s.dist<0)
+head(resup,10)
+head(resdn,10)
+s <- c(head(resup$s.dist,10), head(resdn$s.dist,10))
+names(s) <- c(head(resup$set,10),head(resdn$set,10))
+s <- s[order(s)]
+cols <- gsub("1","red",gsub("-1","blue",as.character(sign(s))))
+par(mar=c(5,27,3,1))
+barplot(abs(s),las=1,horiz=TRUE,col=cols,xlab="ES",cex.names=0.8,main="DC")
+if (! file.exists("DC.html") ) { mitch_report(mres1,outfile="DC.html") }
+
+message("Macrophage")
+m8 <- mitch_import(deres[[8]],DEtype="deseq2",joinType="full")
+mres8 <- mitch_calc(m8,genesets=go,minsetsize=5,cores=16,priority="effect")
+res <- mres8$enrichment_result
+res <- subset(res,p.adjustANOVA<0.05)
+resup <- subset(res,s.dist>0)
+resdn <- subset(res,s.dist<0)
+head(resup,10)
+head(resdn,10)
+s <- c(head(resup$s.dist,10), head(resdn$s.dist,10))
+names(s) <- c(head(resup$set,10),head(resdn$set,10))
+s <- s[order(s)]
+cols <- gsub("1","red",gsub("-1","blue",as.character(sign(s))))
+par(mar=c(5,27,3,1))
+barplot(abs(s),las=1,horiz=TRUE,col=cols,xlab="ES",cex.names=0.8,main="Macrophage")
+if (! file.exists("macrophage.html") ) { mitch_report(mres1,outfile="macrophage.html") }
+
+message("B")
+m9 <- mitch_import(deres[[9]],DEtype="deseq2",joinType="full")
+mres9 <- mitch_calc(m9,genesets=go,minsetsize=5,cores=16,priority="effect")
+res <- mres9$enrichment_result
+res <- subset(res,p.adjustANOVA<0.05)
+resup <- subset(res,s.dist>0)
+resdn <- subset(res,s.dist<0)
+head(resup,10)
+head(resdn,10)
+s <- c(head(resup$s.dist,10), head(resdn$s.dist,10))
+names(s) <- c(head(resup$set,10),head(resdn$set,10))
+s <- s[order(s)]
+cols <- gsub("1","red",gsub("-1","blue",as.character(sign(s))))
+par(mar=c(5,27,3,1))
+barplot(abs(s),las=1,horiz=TRUE,col=cols,xlab="ES",cex.names=0.8,main="B")
+if (! file.exists("B.html") ) { mitch_report(mres1,outfile="B.html") }
+
+```
+
+Heatmap of combined results
+
+```{r,heat1}
+mres
+
+pw <- unique(c(head(subset(mres1$enrichment_result,p.adjustANOVA<0.01 & s.dist>0.3),5)$set,
+  head(subset(mres2$enrichment_result,p.adjustANOVA<0.01 & s.dist>0.3),5)$set,
+  head(subset(mres3$enrichment_result,p.adjustANOVA<0.01 & s.dist>0.3),5)$set,
+  head(subset(mres4$enrichment_result,p.adjustANOVA<0.01 & s.dist>0.3),5)$set,
+  head(subset(mres5$enrichment_result,p.adjustANOVA<0.01 & s.dist>0.3),5)$set,
+  head(subset(mres6$enrichment_result,p.adjustANOVA<0.01 & s.dist>0.3),5)$set,
+  head(subset(mres7$enrichment_result,p.adjustANOVA<0.01 & s.dist>0.3),5)$set,
+  head(subset(mres8$enrichment_result,p.adjustANOVA<0.01 & s.dist>0.3),5)$set,
+  head(subset(mres9$enrichment_result,p.adjustANOVA<0.01 & s.dist>0.3),5)$set,
+  head(subset(mres1$enrichment_result,p.adjustANOVA<0.01 & s.dist< -0.3),5)$set,
+  head(subset(mres2$enrichment_result,p.adjustANOVA<0.01 & s.dist< -0.3),5)$set,
+  head(subset(mres3$enrichment_result,p.adjustANOVA<0.01 & s.dist< -0.3),5)$set,
+  head(subset(mres4$enrichment_result,p.adjustANOVA<0.01 & s.dist< -0.3),5)$set,
+  head(subset(mres5$enrichment_result,p.adjustANOVA<0.01 & s.dist< -0.3),5)$set,
+  head(subset(mres6$enrichment_result,p.adjustANOVA<0.01 & s.dist< -0.3),5)$set,
+  head(subset(mres7$enrichment_result,p.adjustANOVA<0.01 & s.dist< -0.3),5)$set,
+  head(subset(mres8$enrichment_result,p.adjustANOVA<0.01 & s.dist< -0.3),5)$set,
+  head(subset(mres9$enrichment_result,p.adjustANOVA<0.01 & s.dist< -0.3),5)$set))
+
+x1 <- mres1$enrichment_result[which(mres1$enrichment_result$set %in% pw),c("set","s.dist")]
+x2 <- mres2$enrichment_result[which(mres2$enrichment_result$set %in% pw),c("set","s.dist")]
+x3 <- mres3$enrichment_result[which(mres3$enrichment_result$set %in% pw),c("set","s.dist")]
+x4 <- mres4$enrichment_result[which(mres4$enrichment_result$set %in% pw),c("set","s.dist")]
+x5 <- mres5$enrichment_result[which(mres5$enrichment_result$set %in% pw),c("set","s.dist")]
+x6 <- mres6$enrichment_result[which(mres6$enrichment_result$set %in% pw),c("set","s.dist")]
+x7 <- mres7$enrichment_result[which(mres7$enrichment_result$set %in% pw),c("set","s.dist")]
+x8 <- mres8$enrichment_result[which(mres8$enrichment_result$set %in% pw),c("set","s.dist")]
+x9 <- mres9$enrichment_result[which(mres9$enrichment_result$set %in% pw),c("set","s.dist")]
+
+jlist <- list(x1,x2,x3,x4,x5,x6,x7,x8,x9)
+
+jj <- join_all(jlist,by="set")
+rownames(jj) <- jj$set
+jj$set=NULL
+colnames(jj) <- names(deres)
+colfunc <- colorRampPalette(c("blue", "white", "red"))
+heatmap.2(as.matrix(jj),trace="none",scale="none",
+  margin=c(6,20),col=colfunc(25),cexCol=0.8)
+
+```
+
+## Session information
+
+For reproducibility.
+
+```{r,session}
+
+save.image("scanalyse2.Rdata")
+
+sessionInfo()
+
+```
+

@@ -36,6 +36,7 @@ suppressPackageStartupMessages({
   library("muscat")
   library("DESeq2")
   library("mitch")
+  
 })
 
 ```
@@ -279,15 +280,15 @@ rownames(cmx) <- patient_id
 
 tcmx <- t(cmx)
 
-tcmx %>% kbl(caption="cell counts") %>% kable_paper("hover", full_width = F)
+tcmx |> kbl(caption="cell counts") |> kable_paper("hover", full_width = F)
 
 ntcmx <- apply(tcmx,2,function(x) { x/sum(x)*100 } )
 
-ntcmx %>% kbl(caption="cell proportions") %>% kable_paper("hover", full_width = F)
+ntcmx |> kbl(caption="cell proportions") |> kable_paper("hover", full_width = F)
 
 tntcmx <- t(ntcmx)
 
-tntcmx %>% kbl(caption="cell proportions") %>% kable_paper("hover", full_width = F)
+tntcmx |> kbl(caption="cell proportions") |> kable_paper("hover", full_width = F)
 
 tntcmx_pos <- tntcmx[grep("\\+",rownames(tntcmx)),]
 

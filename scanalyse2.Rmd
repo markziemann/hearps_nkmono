@@ -36,7 +36,8 @@ suppressPackageStartupMessages({
   library("muscat")
   library("DESeq2")
   library("mitch")
-  
+  library("limma")
+  library("kableExtra")
 })
 
 ```
@@ -70,9 +71,8 @@ comb <- RunPCA(comb, features = VariableFeatures(object = comb))
 DimHeatmap(comb, dims = 1, cells = 500, balanced = TRUE)
 ElbowPlot(comb)
 comb <- JackStraw(comb, num.replicate = 100)
-comb <- FindNeighbors(comb, dims = 1:8)
-comb <- FindClusters(comb, resolution = 0.1)
-
+comb <- FindNeighbors(comb, dims = 1:5)
+comb <- FindClusters(comb, resolution = 0.2)
 
 ```
 
@@ -107,7 +107,7 @@ VlnPlot(comb, features = c("IL7R", "CCR7"))
 message("CD14+ Mono")
 VlnPlot(comb, features = c("CD14", "LYZ"))
 
-message("Memory CD4+")
+message("Memory CD4+ T")
 VlnPlot(comb, features = c("IL7R", "S100A4"))
 
 message("B")
@@ -128,11 +128,11 @@ VlnPlot(comb, features = c("FCER1A", "CST3"))
 message("Platelet")
 VlnPlot(comb, features = c("PPBP"))
 
-new.cluster.ids <- c("Naive CD4 T", "CD14+ Mono", "Memory CD4 T", "B", "CD8 T", "FCGR3A+ Mono",
-    "NK", "DC", "Platelet")
+#new.cluster.ids <- c("Naive CD4 T", "CD14+ Mono", "Memory CD4 T", "B", "CD8 T",
+#    "FCGR3A+ Mono", "NK", "DC", "Platelet")
 
-FeaturePlot(comb, features = c("MS4A1", "GNLY", "CD3E", "CD14", "FCER1A", "FCGR3A", "LYZ", "PPBP",
-    "CD8A"))
+FeaturePlot(comb, features = c("MS4A1", "GNLY", "CD3E", "CD14", "FCER1A", "FCGR3A",
+  "LYZ", "PPBP", "CD8A"))
 
 #names(new.cluster.ids) <- levels(comb)
 
@@ -383,6 +383,7 @@ deres <- lapply(1:length(assays(pb)), function(i) {
   counts <- assays(pb)[[i]]
   cellname <- names(assays(pb))[i]
   fcounts <- counts[which(rowMeans(counts)>=5),]
+  fcounts <- fcounts+1
   dds <- DESeqDataSetFromMatrix(countData = fcounts , colData = pat_df, design = ~ hiv_status)
   res <- DESeq(dds)
   z <- results(res)
@@ -394,7 +395,33 @@ deres <- lapply(1:length(assays(pb)), function(i) {
 
 names(deres) <- names(assays(pb))
 
-if ( ! dir.exists("de_analysis") {
+
+make_volcano <- function(dm,name) {
+    sig <- subset(dm,padj<0.05)
+    N_SIG=nrow(sig)
+    N_UP=nrow(subset(sig,log2FoldChange>0))
+    N_DN=nrow(subset(sig,log2FoldChange<0))
+    HEADER=paste(N_SIG,"@5%FDR,", N_UP, "up", N_DN, "dn")
+    plot(dm$log2FoldChange,-log10(dm$pval),cex=0.5,pch=19,col="darkgray",
+        main=name, xlab="log FC", ylab="-log10 pval")
+    mtext(HEADER)
+    grid()
+    points(sig$log2FoldChange,-log10(sig$pval),cex=0.5,pch=19,col="red")
+}
+
+message("Up-regulated")
+lapply(deres,function(x) {
+  x <- x[,1:6]
+  head(subset(x,log2FoldChange>0),10)
+})
+
+message("Down-regulated")
+lapply(deres,function(x) {
+  x <- x[,1:6]
+  head(subset(x,log2FoldChange<0),10)
+})
+
+if ( ! dir.exists("de_analysis") ) {
   dir.create("de_analysis")
 }
 
@@ -418,7 +445,7 @@ Using mitch package with gene ontology terms.
 go <- gmt_import("c5.go.v2023.2.Hs.symbols.gmt")
 names(go) <- gsub("_"," ",names(go))
 
-deres
+str(deres)
 
 # mitch multi
 m0 <- mitch_import(deres,DEtype="deseq2",joinType="full")
@@ -469,7 +496,7 @@ s <- s[order(s)]
 cols <- gsub("1","red",gsub("-1","blue",as.character(sign(s))))
 par(mar=c(5,27,3,1))
 barplot(abs(s),las=1,horiz=TRUE,col=cols,xlab="ES",cex.names=0.8,main="CD14+ Mono")
-if (! file.exists("CD14mono.html") ) { mitch_report(mres1,outfile="CD14mono.html") }
+if (! file.exists("CD14mono.html") ) { mitch_report(mres2,outfile="CD14mono.html") }
 
 message("NK 2 (IL7R+)")
 m3 <- mitch_import(deres[[3]],DEtype="deseq2",joinType="full")
@@ -486,7 +513,7 @@ s <- s[order(s)]
 cols <- gsub("1","red",gsub("-1","blue",as.character(sign(s))))
 par(mar=c(5,27,3,1))
 barplot(abs(s),las=1,horiz=TRUE,col=cols,xlab="ES",cex.names=0.8,main="NK 2 (IL7R+)")
-if (! file.exists("NK2.html") ) { mitch_report(mres1,outfile="NK2.html") }
+if (! file.exists("NK2.html") ) { mitch_report(mres3,outfile="NK2.html") }
 
 message("CD14+ Mono (CCL4+)")
 m4 <- mitch_import(deres[[4]],DEtype="deseq2",joinType="full")
@@ -503,7 +530,7 @@ s <- s[order(s)]
 cols <- gsub("1","red",gsub("-1","blue",as.character(sign(s))))
 par(mar=c(5,27,3,1))
 barplot(abs(s),las=1,horiz=TRUE,col=cols,xlab="ES",cex.names=0.8,main="CD14+ Mono (CCL4+)")
-if (! file.exists("CD14monoCCL4.html") ) { mitch_report(mres1,outfile="CD14monoCCL4.html") }
+if (! file.exists("CD14monoCCL4.html") ) { mitch_report(mres4,outfile="CD14monoCCL4.html") }
 
 message("FCGR3A+ Mono")
 m5 <- mitch_import(deres[[5]],DEtype="deseq2",joinType="full")
@@ -520,7 +547,7 @@ s <- s[order(s)]
 cols <- gsub("1","red",gsub("-1","blue",as.character(sign(s))))
 par(mar=c(5,27,3,1))
 barplot(abs(s),las=1,horiz=TRUE,col=cols,xlab="ES",cex.names=0.8,main="FCGR3A+ Mono")
-if (! file.exists("FCGR3Amono.html") ) { mitch_report(mres1,outfile="FCGR3Amono.html") }
+if (! file.exists("FCGR3Amono.html") ) { mitch_report(mres5,outfile="FCGR3Amono.html") }
 
 message("T")
 m6 <- mitch_import(deres[[6]],DEtype="deseq2",joinType="full")
@@ -537,7 +564,7 @@ s <- s[order(s)]
 cols <- gsub("1","red",gsub("-1","blue",as.character(sign(s))))
 par(mar=c(5,27,3,1))
 barplot(abs(s),las=1,horiz=TRUE,col=cols,xlab="ES",cex.names=0.8,main="T")
-if (! file.exists("T.html") ) { mitch_report(mres1,outfile="T.html") }
+if (! file.exists("T.html") ) { mitch_report(mres6,outfile="T.html") }
 
 message("DC")
 m7 <- mitch_import(deres[[7]],DEtype="deseq2",joinType="full")
@@ -554,7 +581,7 @@ s <- s[order(s)]
 cols <- gsub("1","red",gsub("-1","blue",as.character(sign(s))))
 par(mar=c(5,27,3,1))
 barplot(abs(s),las=1,horiz=TRUE,col=cols,xlab="ES",cex.names=0.8,main="DC")
-if (! file.exists("DC.html") ) { mitch_report(mres1,outfile="DC.html") }
+if (! file.exists("DC.html") ) { mitch_report(mres7,outfile="DC.html") }
 
 message("Macrophage")
 m8 <- mitch_import(deres[[8]],DEtype="deseq2",joinType="full")
@@ -571,7 +598,7 @@ s <- s[order(s)]
 cols <- gsub("1","red",gsub("-1","blue",as.character(sign(s))))
 par(mar=c(5,27,3,1))
 barplot(abs(s),las=1,horiz=TRUE,col=cols,xlab="ES",cex.names=0.8,main="Macrophage")
-if (! file.exists("macrophage.html") ) { mitch_report(mres1,outfile="macrophage.html") }
+if (! file.exists("macrophage.html") ) { mitch_report(mres8,outfile="macrophage.html") }
 
 message("B")
 m9 <- mitch_import(deres[[9]],DEtype="deseq2",joinType="full")
@@ -588,33 +615,32 @@ s <- s[order(s)]
 cols <- gsub("1","red",gsub("-1","blue",as.character(sign(s))))
 par(mar=c(5,27,3,1))
 barplot(abs(s),las=1,horiz=TRUE,col=cols,xlab="ES",cex.names=0.8,main="B")
-if (! file.exists("B.html") ) { mitch_report(mres1,outfile="B.html") }
+if (! file.exists("B.html") ) { mitch_report(mres9,outfile="B.html") }
 
 ```
 
 Heatmap of combined results
 
 ```{r,heat1}
-mres
 
 pw <- unique(c(head(subset(mres1$enrichment_result,p.adjustANOVA<0.01 & s.dist>0.3),5)$set,
-  head(subset(mres2$enrichment_result,p.adjustANOVA<0.01 & s.dist>0.3),5)$set,
-  head(subset(mres3$enrichment_result,p.adjustANOVA<0.01 & s.dist>0.3),5)$set,
-  head(subset(mres4$enrichment_result,p.adjustANOVA<0.01 & s.dist>0.3),5)$set,
-  head(subset(mres5$enrichment_result,p.adjustANOVA<0.01 & s.dist>0.3),5)$set,
-  head(subset(mres6$enrichment_result,p.adjustANOVA<0.01 & s.dist>0.3),5)$set,
-  head(subset(mres7$enrichment_result,p.adjustANOVA<0.01 & s.dist>0.3),5)$set,
-  head(subset(mres8$enrichment_result,p.adjustANOVA<0.01 & s.dist>0.3),5)$set,
-  head(subset(mres9$enrichment_result,p.adjustANOVA<0.01 & s.dist>0.3),5)$set,
-  head(subset(mres1$enrichment_result,p.adjustANOVA<0.01 & s.dist< -0.3),5)$set,
-  head(subset(mres2$enrichment_result,p.adjustANOVA<0.01 & s.dist< -0.3),5)$set,
-  head(subset(mres3$enrichment_result,p.adjustANOVA<0.01 & s.dist< -0.3),5)$set,
-  head(subset(mres4$enrichment_result,p.adjustANOVA<0.01 & s.dist< -0.3),5)$set,
-  head(subset(mres5$enrichment_result,p.adjustANOVA<0.01 & s.dist< -0.3),5)$set,
-  head(subset(mres6$enrichment_result,p.adjustANOVA<0.01 & s.dist< -0.3),5)$set,
-  head(subset(mres7$enrichment_result,p.adjustANOVA<0.01 & s.dist< -0.3),5)$set,
-  head(subset(mres8$enrichment_result,p.adjustANOVA<0.01 & s.dist< -0.3),5)$set,
-  head(subset(mres9$enrichment_result,p.adjustANOVA<0.01 & s.dist< -0.3),5)$set))
+  head(subset(mres2$enrichment_result,p.adjustANOVA<0.01 & s.dist>0.3),6)$set,
+  head(subset(mres3$enrichment_result,p.adjustANOVA<0.01 & s.dist>0.3),6)$set,
+  head(subset(mres4$enrichment_result,p.adjustANOVA<0.01 & s.dist>0.3),6)$set,
+  head(subset(mres5$enrichment_result,p.adjustANOVA<0.01 & s.dist>0.3),6)$set,
+  head(subset(mres6$enrichment_result,p.adjustANOVA<0.01 & s.dist>0.3),6)$set,
+  head(subset(mres7$enrichment_result,p.adjustANOVA<0.01 & s.dist>0.3),6)$set,
+  head(subset(mres8$enrichment_result,p.adjustANOVA<0.01 & s.dist>0.3),6)$set,
+  head(subset(mres9$enrichment_result,p.adjustANOVA<0.01 & s.dist>0.3),6)$set,
+  head(subset(mres1$enrichment_result,p.adjustANOVA<0.01 & s.dist< -0.3),6)$set,
+  head(subset(mres2$enrichment_result,p.adjustANOVA<0.01 & s.dist< -0.3),6)$set,
+  head(subset(mres3$enrichment_result,p.adjustANOVA<0.01 & s.dist< -0.3),6)$set,
+  head(subset(mres4$enrichment_result,p.adjustANOVA<0.01 & s.dist< -0.3),6)$set,
+  head(subset(mres5$enrichment_result,p.adjustANOVA<0.01 & s.dist< -0.3),6)$set,
+  head(subset(mres6$enrichment_result,p.adjustANOVA<0.01 & s.dist< -0.3),6)$set,
+  head(subset(mres7$enrichment_result,p.adjustANOVA<0.01 & s.dist< -0.3),6)$set,
+  head(subset(mres8$enrichment_result,p.adjustANOVA<0.01 & s.dist< -0.3),6)$set,
+  head(subset(mres9$enrichment_result,p.adjustANOVA<0.01 & s.dist< -0.3),6)$set))
 
 x1 <- mres1$enrichment_result[which(mres1$enrichment_result$set %in% pw),c("set","s.dist")]
 x2 <- mres2$enrichment_result[which(mres2$enrichment_result$set %in% pw),c("set","s.dist")]
@@ -633,8 +659,9 @@ rownames(jj) <- jj$set
 jj$set=NULL
 colnames(jj) <- names(deres)
 colfunc <- colorRampPalette(c("blue", "white", "red"))
+
 heatmap.2(as.matrix(jj),trace="none",scale="none",
-  margin=c(6,20),col=colfunc(25),cexCol=0.8)
+  margin=c(8,20),col=colfunc(25),cexCol=0.8)
 
 ```
 

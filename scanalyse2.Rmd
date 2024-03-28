@@ -274,7 +274,8 @@ colnames(cmx) <- new.cluster.ids
 
 patient_id <- c("AH0005+","AH0015+","AH0018+","CC0003-","CC0016+","PM001+","PM0020-","PM0027-","PM0028-","PM0032-","PM008+","PM017+")
 hiv_status <- c(1,1,1,0,1,1,0,0,0,0,1,1)
-pat_df <- data.frame(patient_id,hiv_status)
+batch <- factor(c(2,2,1,1,3,3,3,3,2,2,1,1))
+pat_df <- data.frame(patient_id,hiv_status,batch) # there were 3 chromium runs contianing multiple samples
 pat_df
 
 rownames(cmx) <- patient_id
@@ -385,7 +386,7 @@ deres <- lapply(1:length(assays(pb)), function(i) {
   cellname <- names(assays(pb))[i]
   fcounts <- counts[which(rowMeans(counts)>=5),]
   fcounts <- fcounts+1
-  dds <- DESeqDataSetFromMatrix(countData = fcounts , colData = pat_df, design = ~ hiv_status)
+  dds <- DESeqDataSetFromMatrix(countData = fcounts , colData = pat_df, design = ~ batch + hiv_status)
   res <- DESeq(dds)
   z <- results(res)
   vsd <- vst(dds, blind=FALSE)

@@ -378,7 +378,7 @@ Differential expression without batch correction.
 
 ```{r,de1}
 
-rownames(pat_df) <- pat_df[,1]
+rownames(pat_df) <- gsub("-","",gsub("\\+","",pat_df[,1]))
 
 deres <- lapply(1:length(assays(pb)), function(i) {
   counts <- assays(pb)[[i]]
@@ -454,8 +454,6 @@ lapply(1:length(assays(pb)),function(i) {
 Differential expression without batch correction.
 
 ```{r,de2_batch_corrected}
-
-rownames(pat_df) <- pat_df[,1]
 
 deres <- lapply(1:length(assays(pb)), function(i) {
   counts <- assays(pb)[[i]]

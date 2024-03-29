@@ -338,7 +338,6 @@ colnames(colData(sce))
 
 patient_id <- c("AH0005","AH0015","AH0018","CC0003","CC0016","PM001","PM0020","PM0027","PM0028","PM0032","PM008","PM017")
 hiv_status <- c(1,1,1,0,1,1,0,0,0,0,1,1)
-pat_df <- data.frame(patient_id,hiv_status)
 
 colData(sce)$sample_id <- colData(sce)$patient
 colData(sce)$cluster_id <- colData(sce)$ident
@@ -375,7 +374,7 @@ plotMDS(assays(pb)[[1]],cex=1.5,labels=patient_id,col=hiv_status+1,main="MDS red
 
 ```
 
-Differential expression.
+Differential expression without batch correction.
 
 ```{r,de1}
 
@@ -386,17 +385,25 @@ deres <- lapply(1:length(assays(pb)), function(i) {
   cellname <- names(assays(pb))[i]
   fcounts <- counts[which(rowMeans(counts)>=5),]
   fcounts <- fcounts+1
-  dds <- DESeqDataSetFromMatrix(countData = fcounts , colData = pat_df, design = ~ batch + hiv_status)
+  dds <- DESeqDataSetFromMatrix(countData = fcounts , colData = pat_df, design = ~ hiv_status)
   res <- DESeq(dds)
   z <- results(res)
   vsd <- vst(dds, blind=FALSE)
-  zz<-cbind(as.data.frame(z),assay(vsd))
+  zz<-cbind(as.data.frame(z),assay(vsd),fcounts)
   de <- as.data.frame(zz[order(zz$pvalue),])
   return(de)
 })
 
 names(deres) <- names(assays(pb))
 
+nsig1 <- lapply(deres,function(x) {
+  nrow(subset(x,padj<0.05))
+})
+
+nsig1
+
+bc <- t(rbind(as.data.frame(nsig1),as.data.frame(nsig2)))
+colnames(bc) <- c("uncorrected","corrected")
 
 make_volcano <- function(dm,name) {
     sig <- subset(dm,padj<0.05)
@@ -410,6 +417,73 @@ make_volcano <- function(dm,name) {
     grid()
     points(sig$log2FoldChange,-log10(sig$pval),cex=0.5,pch=19,col="red")
 }
+
+lapply(1:length(deres),function(i) {
+  x <- deres[[i]][,1:6]
+  myname <- names(deres)[i]
+  make_volcano(dm=x,name=myname)
+})
+
+message("Up-regulated")
+lapply(deres,function(x) {
+  x <- x[,1:6]
+  head(subset(x,log2FoldChange>0),10)
+})
+
+message("Down-regulated")
+lapply(deres,function(x) {
+  x <- x[,1:6]
+  head(subset(x,log2FoldChange<0),10)
+})
+
+if ( ! dir.exists("de_analysis") ) {
+  dir.create("de_analysis")
+}
+
+lapply(1:length(assays(pb)),function(i) {
+  cellname=names(assays(pb))[[i]]
+  myres <- deres[[i]]
+  filename <- paste(cellname,".tsv",sep="")
+  filename <- gsub("\\)","",gsub("\\(","",gsub(" ","_",filename)))
+  filename <- paste("de_analysis/",filename,sep="")
+  write.table(x=myres,file=filename,sep="\t",quote=FALSE)
+})
+
+```
+
+Differential expression without batch correction.
+
+```{r,de2_batch_corrected}
+
+rownames(pat_df) <- pat_df[,1]
+
+deres <- lapply(1:length(assays(pb)), function(i) {
+  counts <- assays(pb)[[i]]
+  cellname <- names(assays(pb))[i]
+  fcounts <- counts[which(rowMeans(counts)>=5),]
+  fcounts <- fcounts+1
+  dds <- DESeqDataSetFromMatrix(countData = fcounts , colData = pat_df, design = ~ batch + hiv_status)
+  res <- DESeq(dds)
+  z <- results(res)
+  vsd <- vst(dds, blind=FALSE)
+  zz<-cbind(as.data.frame(z),assay(vsd),fcounts)
+  de <- as.data.frame(zz[order(zz$pvalue),])
+  return(de)
+})
+
+names(deres) <- names(assays(pb))
+
+nsig2 <- lapply(deres,function(x) {
+  nrow(subset(x,padj<0.05))
+})
+
+nsig2
+
+lapply(1:length(deres),function(i) {
+  x <- deres[[i]][,1:6]
+  myname <- names(deres)[i]
+  make_volcano(dm=x,name=myname)
+})
 
 message("Up-regulated")
 lapply(deres,function(x) {

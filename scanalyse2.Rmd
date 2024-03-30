@@ -556,7 +556,7 @@ names(s) <- c(head(resup$set,10),head(resdn$set,10))
 s <- s[order(s)]
 cols <- gsub("1","red",gsub("-1","blue",as.character(sign(s))))
 par(mar=c(5,27,3,1))
-barplot(abs(s),las=1,horiz=TRUE,col=cols,xlab="ES",cex.names=0.8,main="NK 1 (FCGRA3A+)")
+if( length(s) > 1 ) { barplot(abs(s),las=1,horiz=TRUE,col=cols,xlab="ES",cex.names=0.8,main="NK 1 (FCGRA3A+)") }
 if (! file.exists("enrichment_analysis/NK1.html") ) { mitch_report(mres1,outfile="enrichment_analysis/NK1.html") }
 
 message("CD14+ Mono")
@@ -573,7 +573,7 @@ names(s) <- c(head(resup$set,10),head(resdn$set,10))
 s <- s[order(s)]
 cols <- gsub("1","red",gsub("-1","blue",as.character(sign(s))))
 par(mar=c(5,27,3,1))
-barplot(abs(s),las=1,horiz=TRUE,col=cols,xlab="ES",cex.names=0.8,main="CD14+ Mono")
+if( length(s) > 1 ) { barplot(abs(s),las=1,horiz=TRUE,col=cols,xlab="ES",cex.names=0.8,main="CD14+ Mono") }
 if (! file.exists("enrichment_analysis/CD14mono.html") ) { mitch_report(mres2,outfile="enrichment_analysis/CD14mono.html") }
 
 message("NK 2 (IL7R+)")
@@ -590,7 +590,7 @@ names(s) <- c(head(resup$set,10),head(resdn$set,10))
 s <- s[order(s)]
 cols <- gsub("1","red",gsub("-1","blue",as.character(sign(s))))
 par(mar=c(5,27,3,1))
-barplot(abs(s),las=1,horiz=TRUE,col=cols,xlab="ES",cex.names=0.8,main="NK 2 (IL7R+)")
+if( length(s) > 1 ) { barplot(abs(s),las=1,horiz=TRUE,col=cols,xlab="ES",cex.names=0.8,main="NK 2 (IL7R+)") }
 if (! file.exists("enrichment_analysis/NK2.html") ) { mitch_report(mres3,outfile="enrichment_analysis/NK2.html") }
 
 message("CD14+ Mono (CCL4+)")
@@ -607,7 +607,7 @@ names(s) <- c(head(resup$set,10),head(resdn$set,10))
 s <- s[order(s)]
 cols <- gsub("1","red",gsub("-1","blue",as.character(sign(s))))
 par(mar=c(5,27,3,1))
-barplot(abs(s),las=1,horiz=TRUE,col=cols,xlab="ES",cex.names=0.8,main="CD14+ Mono (CCL4+)")
+if( length(s) > 1 ) { barplot(abs(s),las=1,horiz=TRUE,col=cols,xlab="ES",cex.names=0.8,main="CD14+ Mono (CCL4+)") }
 if (! file.exists("enrichment_analysis/CD14monoCCL4.html") ) { mitch_report(mres4,outfile="enrichment_analysis/CD14monoCCL4.html") }
 
 message("FCGR3A+ Mono")
@@ -624,7 +624,7 @@ names(s) <- c(head(resup$set,10),head(resdn$set,10))
 s <- s[order(s)]
 cols <- gsub("1","red",gsub("-1","blue",as.character(sign(s))))
 par(mar=c(5,27,3,1))
-barplot(abs(s),las=1,horiz=TRUE,col=cols,xlab="ES",cex.names=0.8,main="FCGR3A+ Mono")
+if( length(s) > 1 ) { barplot(abs(s),las=1,horiz=TRUE,col=cols,xlab="ES",cex.names=0.8,main="FCGR3A+ Mono") }
 if (! file.exists("enrichment_analysis/FCGR3Amono.html") ) { mitch_report(mres5,outfile="enrichment_analysis/FCGR3Amono.html") }
 
 message("T")
@@ -641,7 +641,7 @@ names(s) <- c(head(resup$set,10),head(resdn$set,10))
 s <- s[order(s)]
 cols <- gsub("1","red",gsub("-1","blue",as.character(sign(s))))
 par(mar=c(5,27,3,1))
-barplot(abs(s),las=1,horiz=TRUE,col=cols,xlab="ES",cex.names=0.8,main="T")
+if( length(s) > 1 ) { barplot(abs(s),las=1,horiz=TRUE,col=cols,xlab="ES",cex.names=0.8,main="T") }
 if (! file.exists("enrichment_analysis/T.html") ) { mitch_report(mres6,outfile="enrichment_analysis/T.html") }
 
 message("DC")
@@ -658,7 +658,7 @@ names(s) <- c(head(resup$set,10),head(resdn$set,10))
 s <- s[order(s)]
 cols <- gsub("1","red",gsub("-1","blue",as.character(sign(s))))
 par(mar=c(5,27,3,1))
-barplot(abs(s),las=1,horiz=TRUE,col=cols,xlab="ES",cex.names=0.8,main="DC")
+if( length(s) > 1 ) { barplot(abs(s),las=1,horiz=TRUE,col=cols,xlab="ES",cex.names=0.8,main="DC") }
 if (! file.exists("enrichment_analysis/DC.html") ) { mitch_report(mres7,outfile="enrichment_analysis/DC.html") }
 
 message("Macrophage")
@@ -675,7 +675,7 @@ names(s) <- c(head(resup$set,10),head(resdn$set,10))
 s <- s[order(s)]
 cols <- gsub("1","red",gsub("-1","blue",as.character(sign(s))))
 par(mar=c(5,27,3,1))
-barplot(abs(s),las=1,horiz=TRUE,col=cols,xlab="ES",cex.names=0.8,main="Macrophage")
+if( length(s) > 1 ) { barplot(abs(s),las=1,horiz=TRUE,col=cols,xlab="ES",cex.names=0.8,main="Macrophage") }
 if (! file.exists("enrichment_analysis/macrophage.html") ) { mitch_report(mres8,outfile="enrichment_analysis/macrophage.html") }
 
 message("B")
@@ -692,7 +692,7 @@ names(s) <- c(head(resup$set,10),head(resdn$set,10))
 s <- s[order(s)]
 cols <- gsub("1","red",gsub("-1","blue",as.character(sign(s))))
 par(mar=c(5,27,3,1))
-barplot(abs(s),las=1,horiz=TRUE,col=cols,xlab="ES",cex.names=0.8,main="B")
+if( length(s) > 1 ) { barplot(abs(s),las=1,horiz=TRUE,col=cols,xlab="ES",cex.names=0.8,main="B") }
 if (! file.exists("enrichment_analysis/B.html") ) { mitch_report(mres9,outfile="enrichment_analysis/B.html") }
 
 ```

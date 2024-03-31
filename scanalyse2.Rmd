@@ -402,9 +402,6 @@ nsig1 <- lapply(deres,function(x) {
 
 nsig1
 
-bc <- t(rbind(as.data.frame(nsig1),as.data.frame(nsig2)))
-colnames(bc) <- c("uncorrected","corrected")
-
 make_volcano <- function(dm,name) {
     sig <- subset(dm,padj<0.05)
     N_SIG=nrow(sig)
@@ -476,6 +473,9 @@ nsig2 <- lapply(deres,function(x) {
 })
 
 nsig2
+
+bc <- t(rbind(as.data.frame(nsig1),as.data.frame(nsig2)))
+colnames(bc) <- c("uncorrected","corrected")
 
 lapply(1:length(deres),function(i) {
   x <- deres[[i]][,1:6]

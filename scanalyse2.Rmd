@@ -541,6 +541,7 @@ mitch single
 ```{r,mitch2}
 
 par(mfrow=c(1,1))
+par(mar=c(5,27,3,1))
 
 message("NK 1 (FCGRA3A+)")
 m1 <- mitch_import(deres[[1]],DEtype="deseq2",joinType="full")
@@ -555,9 +556,12 @@ s <- c(head(resup$s.dist,10), head(resdn$s.dist,10))
 names(s) <- c(head(resup$set,10),head(resdn$set,10))
 s <- s[order(s)]
 cols <- gsub("1","red",gsub("-1","blue",as.character(sign(s))))
-par(mar=c(5,27,3,1))
-if( length(s) > 1 ) { barplot(abs(s),las=1,horiz=TRUE,col=cols,xlab="ES",cex.names=0.8,main="NK 1 (FCGRA3A+)") }
-if (! file.exists("enrichment_analysis/NK1.html") ) { mitch_report(mres1,outfile="enrichment_analysis/NK1.html") }
+if( length(s) > 1 ) {
+  barplot(abs(s),las=1,horiz=TRUE,col=cols,xlab="ES",cex.names=0.8,main="NK 1 (FCGRA3A+)")
+  if (! file.exists("enrichment_analysis/NK1.html") ) {
+    mitch_report(mres1,outfile="enrichment_analysis/NK1.html")
+  }
+}
 
 message("CD14+ Mono")
 m2 <- mitch_import(deres[[2]],DEtype="deseq2",joinType="full")
@@ -572,9 +576,12 @@ s <- c(head(resup$s.dist,10), head(resdn$s.dist,10))
 names(s) <- c(head(resup$set,10),head(resdn$set,10))
 s <- s[order(s)]
 cols <- gsub("1","red",gsub("-1","blue",as.character(sign(s))))
-par(mar=c(5,27,3,1))
-if( length(s) > 1 ) { barplot(abs(s),las=1,horiz=TRUE,col=cols,xlab="ES",cex.names=0.8,main="CD14+ Mono") }
-if (! file.exists("enrichment_analysis/CD14mono.html") ) { mitch_report(mres2,outfile="enrichment_analysis/CD14mono.html") }
+if( length(s) > 1 ) {
+  barplot(abs(s),las=1,horiz=TRUE,col=cols,xlab="ES",cex.names=0.8,main="CD14+ Mono")
+  if (! file.exists("enrichment_analysis/CD14mono.html") ) {
+    mitch_report(mres2,outfile="enrichment_analysis/CD14mono.html")
+  }
+}
 
 message("NK 2 (IL7R+)")
 m3 <- mitch_import(deres[[3]],DEtype="deseq2",joinType="full")
@@ -589,9 +596,12 @@ s <- c(head(resup$s.dist,10), head(resdn$s.dist,10))
 names(s) <- c(head(resup$set,10),head(resdn$set,10))
 s <- s[order(s)]
 cols <- gsub("1","red",gsub("-1","blue",as.character(sign(s))))
-par(mar=c(5,27,3,1))
-if( length(s) > 1 ) { barplot(abs(s),las=1,horiz=TRUE,col=cols,xlab="ES",cex.names=0.8,main="NK 2 (IL7R+)") }
-if (! file.exists("enrichment_analysis/NK2.html") ) { mitch_report(mres3,outfile="enrichment_analysis/NK2.html") }
+if( length(s) > 1 ) {
+  barplot(abs(s),las=1,horiz=TRUE,col=cols,xlab="ES",cex.names=0.8,main="NK 2 (IL7R+)")
+  if (! file.exists("enrichment_analysis/NK2.html") ) {
+    mitch_report(mres3,outfile="enrichment_analysis/NK2.html")
+  }
+}
 
 message("CD14+ Mono (CCL4+)")
 m4 <- mitch_import(deres[[4]],DEtype="deseq2",joinType="full")
@@ -606,9 +616,12 @@ s <- c(head(resup$s.dist,10), head(resdn$s.dist,10))
 names(s) <- c(head(resup$set,10),head(resdn$set,10))
 s <- s[order(s)]
 cols <- gsub("1","red",gsub("-1","blue",as.character(sign(s))))
-par(mar=c(5,27,3,1))
-if( length(s) > 1 ) { barplot(abs(s),las=1,horiz=TRUE,col=cols,xlab="ES",cex.names=0.8,main="CD14+ Mono (CCL4+)") }
-if (! file.exists("enrichment_analysis/CD14monoCCL4.html") ) { mitch_report(mres4,outfile="enrichment_analysis/CD14monoCCL4.html") }
+if( length(s) > 1 ) {
+  barplot(abs(s),las=1,horiz=TRUE,col=cols,xlab="ES",cex.names=0.8,main="CD14+ Mono (CCL4+)")
+  if (! file.exists("enrichment_analysis/CD14monoCCL4.html") ) {
+    mitch_report(mres4,outfile="enrichment_analysis/CD14monoCCL4.html")
+  }
+}
 
 message("FCGR3A+ Mono")
 m5 <- mitch_import(deres[[5]],DEtype="deseq2",joinType="full")
@@ -623,9 +636,12 @@ s <- c(head(resup$s.dist,10), head(resdn$s.dist,10))
 names(s) <- c(head(resup$set,10),head(resdn$set,10))
 s <- s[order(s)]
 cols <- gsub("1","red",gsub("-1","blue",as.character(sign(s))))
-par(mar=c(5,27,3,1))
-if( length(s) > 1 ) { barplot(abs(s),las=1,horiz=TRUE,col=cols,xlab="ES",cex.names=0.8,main="FCGR3A+ Mono") }
-if (! file.exists("enrichment_analysis/FCGR3Amono.html") ) { mitch_report(mres5,outfile="enrichment_analysis/FCGR3Amono.html") }
+if( length(s) > 1 ) {
+  barplot(abs(s),las=1,horiz=TRUE,col=cols,xlab="ES",cex.names=0.8,main="FCGR3A+ Mono")
+  if (! file.exists("enrichment_analysis/FCGR3Amono.html") ) {
+    mitch_report(mres5,outfile="enrichment_analysis/FCGR3Amono.html")
+  }
+}
 
 message("T")
 m6 <- mitch_import(deres[[6]],DEtype="deseq2",joinType="full")
@@ -640,9 +656,12 @@ s <- c(head(resup$s.dist,10), head(resdn$s.dist,10))
 names(s) <- c(head(resup$set,10),head(resdn$set,10))
 s <- s[order(s)]
 cols <- gsub("1","red",gsub("-1","blue",as.character(sign(s))))
-par(mar=c(5,27,3,1))
-if( length(s) > 1 ) { barplot(abs(s),las=1,horiz=TRUE,col=cols,xlab="ES",cex.names=0.8,main="T") }
-if (! file.exists("enrichment_analysis/T.html") ) { mitch_report(mres6,outfile="enrichment_analysis/T.html") }
+if( length(s) > 1 ) {
+  barplot(abs(s),las=1,horiz=TRUE,col=cols,xlab="ES",cex.names=0.8,main="T")
+  if (! file.exists("enrichment_analysis/T.html") ) {
+    mitch_report(mres6,outfile="enrichment_analysis/T.html")
+  }
+}
 
 message("DC")
 m7 <- mitch_import(deres[[7]],DEtype="deseq2",joinType="full")
@@ -657,9 +676,12 @@ s <- c(head(resup$s.dist,10), head(resdn$s.dist,10))
 names(s) <- c(head(resup$set,10),head(resdn$set,10))
 s <- s[order(s)]
 cols <- gsub("1","red",gsub("-1","blue",as.character(sign(s))))
-par(mar=c(5,27,3,1))
-if( length(s) > 1 ) { barplot(abs(s),las=1,horiz=TRUE,col=cols,xlab="ES",cex.names=0.8,main="DC") }
-if (! file.exists("enrichment_analysis/DC.html") ) { mitch_report(mres7,outfile="enrichment_analysis/DC.html") }
+if( length(s) > 1 ) {
+  barplot(abs(s),las=1,horiz=TRUE,col=cols,xlab="ES",cex.names=0.8,main="DC")
+  if (! file.exists("enrichment_analysis/DC.html") ) {
+    mitch_report(mres7,outfile="enrichment_analysis/DC.html")
+  }
+}
 
 message("Macrophage")
 m8 <- mitch_import(deres[[8]],DEtype="deseq2",joinType="full")
@@ -674,9 +696,12 @@ s <- c(head(resup$s.dist,10), head(resdn$s.dist,10))
 names(s) <- c(head(resup$set,10),head(resdn$set,10))
 s <- s[order(s)]
 cols <- gsub("1","red",gsub("-1","blue",as.character(sign(s))))
-par(mar=c(5,27,3,1))
-if( length(s) > 1 ) { barplot(abs(s),las=1,horiz=TRUE,col=cols,xlab="ES",cex.names=0.8,main="Macrophage") }
-if (! file.exists("enrichment_analysis/macrophage.html") ) { mitch_report(mres8,outfile="enrichment_analysis/macrophage.html") }
+if( length(s) > 1 ) {
+  barplot(abs(s),las=1,horiz=TRUE,col=cols,xlab="ES",cex.names=0.8,main="Macrophage")
+  if (! file.exists("enrichment_analysis/macrophage.html") ) {
+    mitch_report(mres8,outfile="enrichment_analysis/macrophage.html")
+  }
+}
 
 message("B")
 m9 <- mitch_import(deres[[9]],DEtype="deseq2",joinType="full")
@@ -691,9 +716,12 @@ s <- c(head(resup$s.dist,10), head(resdn$s.dist,10))
 names(s) <- c(head(resup$set,10),head(resdn$set,10))
 s <- s[order(s)]
 cols <- gsub("1","red",gsub("-1","blue",as.character(sign(s))))
-par(mar=c(5,27,3,1))
-if( length(s) > 1 ) { barplot(abs(s),las=1,horiz=TRUE,col=cols,xlab="ES",cex.names=0.8,main="B") }
-if (! file.exists("enrichment_analysis/B.html") ) { mitch_report(mres9,outfile="enrichment_analysis/B.html") }
+if( length(s) > 1 ) {
+  barplot(abs(s),las=1,horiz=TRUE,col=cols,xlab="ES",cex.names=0.8,main="B")
+  if (! file.exists("enrichment_analysis/B.html") ) {
+    mitch_report(mres9,outfile="enrichment_analysis/B.html")
+  }
+}
 
 ```
 

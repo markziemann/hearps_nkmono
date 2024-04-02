@@ -270,7 +270,7 @@ cells2 <- lapply(cells2,function(x) { stringi::stri_reverse(paste(x[2:length(x)]
 cells2 <- table(unlist(cells2))
 
 cmx <- matrix(cells2,nrow=12)
-colnames(cmx) <- new.cluster.ids
+colnames(cmx) <- unique(sapply(strsplit(gsub(" CC","@",gsub(" AH","@",gsub(" PM","@",names(cells2)))),"@"),"[[",1))
 
 patient_id <- c("AH0005+","AH0015+","AH0018+","CC0003-","CC0016+","PM001+","PM0020-","PM0027-","PM0028-","PM0032-","PM008+","PM017+")
 hiv_status <- c(1,1,1,0,1,1,0,0,0,0,1,1)

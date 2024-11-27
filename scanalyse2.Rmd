@@ -448,7 +448,7 @@ lapply(1:length(assays(pb)),function(i) {
 
 ```
 
-Differential expression without batch correction.
+Differential expression with batch correction.
 
 ```{r,de2_batch_corrected}
 
@@ -528,10 +528,31 @@ if ( ! dir.exists("enrichment_analysis") ) {
 # mitch multi
 m0 <- mitch_import(deres,DEtype="deseq2",joinType="full")
 summary(m0)
+dim(m0)
+# remove genes with 7/9 or more NA values
+m0 <- m0[which(apply(m0,1,function(x) { length(which(is.na(x)))<7  } )),]
+dim(m0)
 mres0 <- mitch_calc(m0,genesets=go,minsetsize=5,cores=16,priority="effect")
-mres0 <- head(mres0$enrichment_result)
-mres0 <- subset(mres0,p.adjustMANOVA<0.05)
-head(mres0)
+
+head(mres0$enrichment_result,20) |> kbl(caption="top enrichments") |> kable_paper("hover", full_width = F)
+
+head(subset(mres0$enrichment_result,p.adjustMANOVA<0.01),20) |> kbl(caption="top enrichments") |> kable_paper("hover", full_width = F)
+
+sig <- head(subset(mres0$enrichment_result,p.adjustMANOVA<0.01),30)
+
+sig <- sig[,c(1,4:12)]
+rownames(sig) <- sig[,1]
+sig[,1]=NULL
+
+colfunc <- colorRampPalette(c("blue", "white", "red"))
+
+heatmap.2(as.matrix(sig),trace="none",scale="none",
+  margin=c(10,22),col=colfunc(25),cexCol=0.8, cexRow=0.7)
+
+pdf("multimitch_heatmap.pdf")
+heatmap.2(as.matrix(sig),trace="none",scale="none",
+  margin=c(10,22),col=colfunc(25),cexCol=0.8, cexRow=0.7)
+dev.off()
 
 ```
 
@@ -768,6 +789,212 @@ colfunc <- colorRampPalette(c("blue", "white", "red"))
 
 heatmap.2(as.matrix(jj),trace="none",scale="none",
   margin=c(10,20),col=colfunc(25),cexCol=0.8)
+
+```
+
+## Differential expression2 KIR3DL2 positive cells 
+
+We are going to use muscat for pseudobulk analysis.
+First need to convert seurat obj to singlecellexperiment object.
+Then summarise counts to pseudobulk level.
+
+Cells to look at:
+
+* DCs
+* NK2
+* Macrophage
+
+```{r,KIR3DL2}
+
+sc <- assay(sce)
+table(sc[which(rownames(sc)=="KIR3DL2"),])
+
+KIR3DL2_2 <- sc[,sc[which(rownames(sc)=="KIR3DL2"),]>1]
+KIR3DL2_0 <- sc[,sc[which(rownames(sc)=="KIR3DL2"),]<1]
+summary(colSums(KIR3DL2_2))
+summary(colSums(KIR3DL2_0))
+par(mfrow=c(2,1))
+hist(colSums(KIR3DL2_2),breaks=50,xlim=c(0,1e5),main="KIR3DL2+")
+hist(colSums(KIR3DL2_0),breaks=50,xlim=c(0,1e5),main="KIR3DL2-")
+par(mfrow=c(1,1))
+
+low <- as.numeric(sc[which(rownames(sc)=="KIR3DL2"),]==0) * 1
+med <- as.numeric(sc[which(rownames(sc)=="KIR3DL2"),]==1) * 2
+high <- as.numeric(sc[which(rownames(sc)=="KIR3DL2"),]>1) * 3
+KIR3DL2 <- data.frame(low,med,high)
+KIR3DL2$sum <- rowSums(KIR3DL2)
+head(KIR3DL2)
+table(KIR3DL2$sum)
+colData(sce)$KIR3DL2 <- KIR3DL2$sum
+# change cluster id names to incorporate KIR3DL2 counts
+colData(sce)$cluster_id <- paste(colData(sce)$cluster_id,colData(sce)$KIR3DL2)
+
+
+sc_low <- sc[,KIR3DL2$sum==1]
+sc_med <- sc[,KIR3DL2$sum==2]
+sc_hi <- sc[,KIR3DL2$sum==3]
+
+summary(colSums(sc_low))
+summary(colSums(sc_med))
+summary(colSums(sc_hi))
+
+dim(sc_low)
+dim(sc_med)
+dim(sc_hi)
+
+colDat_hi <- subset(colData(sce),KIR3DL2==3)
+colDat_med <- subset(colData(sce),KIR3DL2==2)
+colDat_low <- subset(colData(sce),KIR3DL2==1)
+
+table(colDat_low$ident)/nrow(colDat_low)*100
+table(colDat_med$ident)/nrow(colDat_med)*100
+table(colDat_hi$ident)/nrow(colDat_hi)*100
+
+message("Focus on NK 1 (FCGRA3A+) now")
+
+sc_low <- sc[,colData(sce)$KIR3DL2==1 & colData(sce)$ident=="NK 1 (FCGRA3A+)"]
+sc_med <- sc[,colData(sce)$KIR3DL2==2 & colData(sce)$ident=="NK 1 (FCGRA3A+)"]
+sc_hi <- sc[,colData(sce)$KIR3DL2==3 & colData(sce)$ident=="NK 1 (FCGRA3A+)"]
+
+colDat_hi <- subset(colData(sce),KIR3DL2==3 & ident=="NK 1 (FCGRA3A+)")
+sc_hi <- SingleCellExperiment(list(counts=sc_hi), colData=colDat_hi)
+
+colDat_med <- subset(colData(sce),KIR3DL2==2 & ident=="NK 1 (FCGRA3A+)")
+sc_med <- SingleCellExperiment(list(counts=sc_med), colData=colDat_med)
+
+colDat_low <- subset(colData(sce),KIR3DL2==1 & ident=="NK 1 (FCGRA3A+)")
+sc_low <- SingleCellExperiment(list(counts=sc_low), colData=colDat_low)
+
+#muscat aggregation of NK 1 (FCGRA3A+) cells
+pbhi <- aggregateData(sc_hi, assay="counts", fun = "sum", by = c("sample_id"))
+pbmed <- aggregateData(sc_med, assay="counts", fun = "sum", by = c("sample_id"))
+pblow <- aggregateData(sc_low, assay="counts", fun = "sum", by = c("sample_id"))
+
+colnames(pbhi) <- paste(colnames(pbhi),"hi")
+colnames(pbmed) <- paste(colnames(pbmed),"med")
+colnames(pblow) <- paste(colnames(pblow),"low")
+
+kx <- cbind(assay(pbhi),assay(pbmed),assay(pblow))
+
+
+dfhi <- pat_df
+dfhi$KIR3DL2 <- 3
+dfmed <- pat_df
+dfmed$KIR3DL2 <- 2
+dflow <- pat_df
+dflow$KIR3DL2 <- 1
+
+kdf <- rbind(dfhi,dfmed,dflow)
+rownames(kdf) <- colnames(kx)
+
+## focus on HIV negative
+kdf1 <- subset(kdf,hiv_status==0 & KIR3DL2!=2)
+kx1 <- kx[,which(colnames(kx) %in% rownames(kdf1))]
+colSums(kx1)
+plotMDS(kx1)
+
+kx1f <- kx1[which(rowMeans(kx1)>=5),]
+kx1f <- kx1f+1
+dds <- DESeqDataSetFromMatrix(countData = kx1f , colData = kdf1, design = ~ batch + KIR3DL2)
+res <- DESeq(dds)
+z <- results(res)
+vsd <- vst(dds, blind=FALSE)
+zz <- cbind(as.data.frame(z),assay(vsd),kx1f)
+kx1de <- as.data.frame(zz[order(zz$pvalue),])
+
+kx1de[1:50,1:6] |> kbl(caption="KIR3DL2 associatedc genes in HIV- cells") |> kable_paper("hover", full_width = F)
+
+## select HIV positive
+kdf2 <- subset(kdf,hiv_status==1 & KIR3DL2!=2)
+kx2 <- kx[,which(colnames(kx) %in% rownames(kdf2))]
+colSums(kx2)
+plotMDS(kx2)
+
+kx2f <- kx2[which(rowMeans(kx2)>=5),]
+kx2f <- kx2f+1
+dds <- DESeqDataSetFromMatrix(countData = kx2f , colData = kdf2, design = ~ batch + KIR3DL2)
+res <- DESeq(dds)
+z <- results(res)
+vsd <- vst(dds, blind=FALSE)
+zz <- cbind(as.data.frame(z),assay(vsd),kx2f)
+kx2de <- as.data.frame(zz[order(zz$pvalue),])
+
+kx2de[1:50,1:6] |> kbl(caption="KIR3DL2 associatedc genes in HIV- cells") |> kable_paper("hover", full_width = F)
+
+```
+
+Pathway analysis.
+
+```{r,kirdl3_pw}
+
+k1 <- mitch_import(kx1de,DEtype="deseq2")
+k1m <- mitch_calc(k1,genesets=go,minsetsize=5,cores=16,priority="effect")
+
+head(subset(k1m$enrichment_result, s.dist > 0),20) |> kbl(caption="top enrichments (positive correl)") |> kable_paper("hover", full_width = F)
+head(subset(k1m$enrichment_result, s.dist < 0),20) |> kbl(caption="top enrichments (negative correl)") |> kable_paper("hover", full_width = F)
+
+up <- head(subset(k1m$enrichment_result, s.dist > 0 & p.adjustANOVA < 0.05),20)
+dn <- head(subset(k1m$enrichment_result, s.dist < 0 & p.adjustANOVA < 0.05),20)
+top <- rbind(up,dn)
+top <- top[order(top$s.dist),]
+
+par(mar=c(5.1, 25.1, 4.1, 2.1))
+gsn <- substr(top$set, start = 1, stop = 70 )
+barplot(top$s.dist,horiz=TRUE,las=1,xlab="ES",names.arg=gsn,cex.names=0.6,main="HIV neg")
+
+mitch_plots(k1m,outfile="KIR3DL2_assoc_hivneg.pdf")
+
+
+if ( ! file.exists("KIR3DL2_assoc_hivneg.html") ) {
+  mitch_report(res=k1m,outfile="KIR3DL2_assoc_hivneg.html")
+}
+
+# pos
+k2 <- mitch_import(kx2de,DEtype="deseq2")
+k2m <- mitch_calc(k2,genesets=go,minsetsize=5,cores=16,priority="effect")
+
+head(subset(k2m$enrichment_result, s.dist > 0),20) |> kbl(caption="top enrichments (positive correl)")  |> kable_paper("hover", full_width = F)
+head(subset(k2m$enrichment_result, s.dist < 0),20) |> kbl(caption="top enrichments (negative correl)") |> kable_paper("hover", full_width = F)
+
+up <- head(subset(k2m$enrichment_result, s.dist > 0 & p.adjustANOVA < 0.05),20)
+dn <- head(subset(k2m$enrichment_result, s.dist < 0 & p.adjustANOVA < 0.05),20)
+top <- rbind(up,dn)
+top <- top[order(top$s.dist),]
+
+par(mar=c(5.1, 25.1, 4.1, 2.1))
+gsn <- substr(top$set, start = 1, stop = 70 )
+barplot(top$s.dist,horiz=TRUE,las=1,xlab="ES",names.arg=gsn,cex.names=0.6,main="HIV pos")
+
+mitch_plots(k2m,outfile="KIR3DL2_assoc_hivpos.pdf")
+
+if ( ! file.exists("KIR3DL2_assoc_hivpos.html") ) {
+  mitch_report(res=k2m,outfile="KIR3DL2_assoc_hivpos.html")
+}
+
+par(mar=c(5.1, 4.1, 4.1, 2.1))
+
+```
+
+Multi-contrast enrichment
+
+```{r,kirdl3_pw2d}
+
+km <- merge(k1,k2,by=0)
+rownames(km) <- km[,1]
+km[,1]=NULL
+colnames(km) <- c("neg","pos")
+dim(km)
+
+kmm <- mitch_calc(km,genesets=go,minsetsize=5,cores=16,priority="effect")
+
+head(subset(kmm$enrichment_result, s.dist > 0),20) |> kbl(caption="top multi-enrichment") |> kable_paper("hover", full_width = F)
+
+mitch_plots(kmm,outfile="KIR3DL2_assoc_hivnegpos.pdf")
+
+if ( ! file.exists("KIR3DL2_assoc_hivnegpos.html") ) {
+  mitch_report(res=kmm,outfile="KIR3DL2_assoc_hivnegpos.html")
+}
+
 
 ```
 

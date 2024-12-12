@@ -829,7 +829,6 @@ colData(sce)$KIR3DL2 <- KIR3DL2$sum
 # change cluster id names to incorporate KIR3DL2 counts
 colData(sce)$cluster_id <- paste(colData(sce)$cluster_id,colData(sce)$KIR3DL2)
 
-
 sc_low <- sc[,KIR3DL2$sum==1]
 sc_med <- sc[,KIR3DL2$sum==2]
 sc_hi <- sc[,KIR3DL2$sum==3]
@@ -876,7 +875,6 @@ colnames(pblow) <- paste(colnames(pblow),"low")
 
 kx <- cbind(assay(pbhi),assay(pbmed),assay(pblow))
 
-
 dfhi <- pat_df
 dfhi$KIR3DL2 <- 3
 dfmed <- pat_df
@@ -902,7 +900,9 @@ vsd <- vst(dds, blind=FALSE)
 zz <- cbind(as.data.frame(z),assay(vsd),kx1f)
 kx1de <- as.data.frame(zz[order(zz$pvalue),])
 
-kx1de[1:50,1:6] |> kbl(caption="KIR3DL2 associatedc genes in HIV- cells") |> kable_paper("hover", full_width = F)
+kx1de[1:50,1:6] |> kbl(caption="KIR3DL2 associated genes in HIV- cells") |> kable_paper("hover", full_width = F)
+
+write.table(x=kx1de,file="KIR3DL2_de_hivneg.tsv",sep="\t",quote=FALSE)
 
 ## select HIV positive
 kdf2 <- subset(kdf,hiv_status==1 & KIR3DL2!=2)
@@ -919,7 +919,41 @@ vsd <- vst(dds, blind=FALSE)
 zz <- cbind(as.data.frame(z),assay(vsd),kx2f)
 kx2de <- as.data.frame(zz[order(zz$pvalue),])
 
-kx2de[1:50,1:6] |> kbl(caption="KIR3DL2 associatedc genes in HIV- cells") |> kable_paper("hover", full_width = F)
+kx2de[1:50,1:6] |> kbl(caption="KIR3DL2 associated genes in HIV+ cells") |> kable_paper("hover", full_width = F)
+
+write.table(x=kx2de,file="KIR3DL2_de_hivpos.tsv",sep="\t",quote=FALSE)
+
+```
+
+Now make a model that incorporates HIV+ and HIV- cells.
+
+
+```{r,KIR3DL3}
+
+kdf
+head(kx,2)
+
+kdf3 <- subset(kdf, KIR3DL2!=2)
+
+kx3 <- kx[,which(colnames(kx) %in% rownames(kdf3))]
+
+colSums(kx3)
+plotMDS(kx3)
+
+dim(kx3)
+kx3f <- kx3[which(rowMeans(kx3)>=5),]
+dim(kx3f)
+
+# hiv-
+dds <- DESeqDataSetFromMatrix(countData = kx3f , colData = kdf3, design = ~ batch + hiv_status + KIR3DL2)
+
+res <- DESeq(dds)
+z <- results(res)
+vsd <- vst(dds, blind=FALSE)
+zz <- cbind(as.data.frame(z),assay(vsd),kx3f)
+kx3de <- as.data.frame(zz[order(zz$pvalue),])
+
+kx3de[1:50,1:6] |> kbl(caption="KIR3DL2 associated genes irrespective of HIV status") |> kable_paper("hover", full_width = F)
 
 ```
 
@@ -995,6 +1029,28 @@ if ( ! file.exists("KIR3DL2_assoc_hivnegpos.html") ) {
   mitch_report(res=kmm,outfile="KIR3DL2_assoc_hivnegpos.html")
 }
 
+```
+
+Pathway analysis irrespective of HIV status.
+
+```{r,kirdl3_pw2}
+
+k3 <- mitch_import(kx3de,DEtype="deseq2")
+k3m <- mitch_calc(k3,genesets=go,minsetsize=5,cores=16,priority="effect")
+
+head(subset(k3m$enrichment_result, s.dist > 0),20) |> kbl(caption="top enrichments (positive correl)") |> kable_paper("hover", full_width = F)
+head(subset(k3m$enrichment_result, s.dist < 0),20) |> kbl(caption="top enrichments (negative correl)") |> kable_paper("hover", full_width = F)
+
+up <- head(subset(k3m$enrichment_result, s.dist > 0 & p.adjustANOVA < 0.05),20)
+dn <- head(subset(k3m$enrichment_result, s.dist < 0 & p.adjustANOVA < 0.05),20)
+top <- rbind(up,dn)
+top <- top[order(top$s.dist),]
+
+par(mar=c(5.1, 25.1, 4.1, 2.1))
+gsn <- substr(top$set, start = 1, stop = 70 )
+barplot(top$s.dist,horiz=TRUE,las=1,xlab="ES",names.arg=gsn,cex.names=0.6,main="HIV neg")
+
+mitch_plots(k3m,outfile="KIR3DL2_assoc_all.pdf")
 
 ```
 

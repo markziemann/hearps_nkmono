@@ -39,9 +39,59 @@ suppressPackageStartupMessages({
   library("limma")
   library("kableExtra")
   library("gplots")
+
+  library("network")
+  library("eulerr")
+  library("dplyr")
+  library("reshape2")
 })
 
+knitr::opts_chunk$set(dev = 'svg') # set output device to svg
+
 ```
+
+```{r,functions}
+
+map2color<-function(x,pal,limits=NULL){
+    if(is.null(limits)) limits=range(x)
+    pal[findInterval(x,seq(limits[1],limits[2],length.out=length(pal)+1), all.inside=TRUE)]
+}
+
+gs2net <- function(gset,em,colfunc=colorRampPalette(c("blue", "white","red"))(n=100)){
+  gset <- gset[which(lapply(gset,length)>0)]
+  mydf <- bind_rows(lapply(gset, as.data.frame.list))
+  rownames(mydf) <- names(gset)
+  j <- apply(mydf,1,function(x) {
+    apply(mydf,1,function(y) {
+      length(intersect(x,y) ) / length(union(x,y))
+    })
+  })
+  j[lower.tri(j)] <- NA
+  j[lower.tri(j,diag=TRUE)] <- 0
+  jl <- melt(j)
+  jl <- jl[which(jl$Var1 != jl$Var2),]
+  jl <- jl[which(jl$value != 1),]
+  jl <- jl[order(-jl$value),]
+  jl <- head(jl,length(gset)*2)
+  jl$edgeSize = with(jl, jl$value/sum(jl$value))
+  lengths <- unlist(lapply(gset,length))
+  lengths <- sqrt(lengths/sum(lengths)*100)
+  jl$vertexsize <- lengths[match(as.character(jl$Var1),names(lengths))]
+  jl2 <- apply(jl[,1:2],2,as.character)
+  jlnet = network(jl2)
+#  goid <- sapply(strsplit(names(gset)," "),"[[",1)
+#  es <- em[which(em$GO.ID %in% goid),"ES"]
+  es <- y[match(names(gset),y$set),"s.dist"]
+  colours <- map2color(es,colfunc)
+  plot(jlnet, displaylabels = TRUE, label.col = "steelblue",
+       edge.lwd = c(jl$edgeSize) * 100,
+       arrowhead.cex = 0,
+       label.cex = 0.8, vertex.border = "white",vertex.cex = jl$vertexsize,
+       vertex.col = colours, edge.col = rgb(0, 0, 0, alpha = 0.5))
+}
+
+```
+
 
 Load data.
 
@@ -516,7 +566,8 @@ Using mitch package with gene ontology terms.
 
 ```{r,mitch1}
 
-go <- gmt_import("c5.go.v2023.2.Hs.symbols.gmt")
+#go <- gmt_import("c5.go.v2023.2.Hs.symbols.gmt")
+go <- gmt_import("go_2024-11.gmt")
 names(go) <- gsub("_"," ",names(go))
 
 str(deres)
@@ -959,7 +1010,7 @@ kx3de[1:50,1:6] |> kbl(caption="KIR3DL2 associated genes irrespective of HIV sta
 
 Pathway analysis.
 
-```{r,kirdl3_pw}
+```{r,kirdl3_pw_neg}
 
 k1 <- mitch_import(kx1de,DEtype="deseq2")
 k1m <- mitch_calc(k1,genesets=go,minsetsize=5,cores=16,priority="effect")
@@ -978,12 +1029,71 @@ barplot(top$s.dist,horiz=TRUE,las=1,xlab="ES",names.arg=gsn,cex.names=0.6,main="
 
 mitch_plots(k1m,outfile="KIR3DL2_assoc_hivneg.pdf")
 
+```
+
+herenow network diagram
+
+```{r,kirdl3_pwn_et,fig.width=13,fig.height=9}
+
+par(mar = c(5.1, 4.1, 4.1, 2.1))
+
+### Network diagram
+x <- kx1de
+y <- k1m$enrichment_result
+
+#go <- gmt_import("go_2024-11.gmt")
+goids <- sapply(strsplit(names(go)," "),"[[",1)
+
+# up 20
+scores <- x$stat
+names(scores) <- rownames(x)
+up <- head(subset(y,p.adjustANOVA<0.05 & s.dist > 0),20)
+
+up |> kbl(caption="Top upregulated pathways") |> kable_paper("hover", full_width = F)
+
+up_go <- sapply(strsplit(up[,1]," "),"[[",1)
+up_go <- go[which(goids %in% up_go)]
+topgs_up <- lapply(1:length(up_go),function(i) {
+  gsname <- names(up_go)[i]
+  genes <- up_go[[i]]
+  gene_scores <- scores[which(names(scores) %in% genes)]
+  top_genes <- names(which(gene_scores>2))
+  return(top_genes)
+})
+names(topgs_up) <- names(up_go)
+gs2net(topgs_up,y,colorRampPalette(c("pink","darkred"))(n=100))
+topgs_up
+
+#dn 20
+dn <- head(subset(y,p.adjustANOVA<0.05 & s.dist < 0),20)
+
+dn |> kbl(caption="Top downregulated pathways")|> kable_paper("hover", full_width = F)
+
+dn_go <- sapply(strsplit(dn[,1]," "),"[[",1)
+#dn_go <- dn[,1]
+dn_go <- go[which(goids %in% dn_go)]
+topgs_dn <- lapply(1:length(dn_go),function(i) {
+  gsname <- names(dn_go)[i]
+  genes <- dn_go[[i]]
+  gene_scores <- scores[which(names(scores) %in% genes)]
+  top_genes <- names(which(gene_scores< -2))
+  return(top_genes)
+})
+names(topgs_dn) <- names(dn_go)
+gs2net(topgs_dn,y,colorRampPalette(c("darkblue","lightblue"))(n=100))
+topgs_dn
+gset <- c(topgs_up,topgs_dn)
 
 if ( ! file.exists("KIR3DL2_assoc_hivneg.html") ) {
   mitch_report(res=k1m,outfile="KIR3DL2_assoc_hivneg.html")
 }
 
-# pos
+```
+
+Now in HIV+
+
+```{r,kirdl3_pw_pos}
+
 k2 <- mitch_import(kx2de,DEtype="deseq2")
 k2m <- mitch_calc(k2,genesets=go,minsetsize=5,cores=16,priority="effect")
 
@@ -1006,6 +1116,56 @@ if ( ! file.exists("KIR3DL2_assoc_hivpos.html") ) {
 }
 
 par(mar=c(5.1, 4.1, 4.1, 2.1))
+
+```
+
+Network diagram
+
+```{r,kirdl3_pw_pos_net,fig.width=13,fig.height=9}
+
+### Network diagram
+x <- kx2de
+y <- k2m$enrichment_result
+
+# up 20
+scores <- x$stat
+names(scores) <- rownames(x)
+up <- head(subset(y,p.adjustANOVA<0.05 & s.dist > 0),20)
+
+up |> kbl(caption="Top upregulated pathways") |> kable_paper("hover", full_width = F)
+
+up_go <- sapply(strsplit(up[,1]," "),"[[",1)
+up_go <- go[which(goids %in% up_go)]
+topgs_up <- lapply(1:length(up_go),function(i) {
+  gsname <- names(up_go)[i]
+  genes <- up_go[[i]]
+  gene_scores <- scores[which(names(scores) %in% genes)]
+  top_genes <- names(which(gene_scores>2))
+  return(top_genes)
+})
+names(topgs_up) <- names(up_go)
+gs2net(topgs_up,y,colorRampPalette(c("pink","darkred"))(n=100))
+topgs_up
+
+#dn 20
+dn <- head(subset(y,p.adjustANOVA<0.05 & s.dist < 0),20)
+
+dn |> kbl(caption="Top downregulated pathways")|> kable_paper("hover", full_width = F)
+
+dn_go <- sapply(strsplit(dn[,1]," "),"[[",1)
+#dn_go <- dn[,1]
+dn_go <- go[which(goids %in% dn_go)]
+topgs_dn <- lapply(1:length(dn_go),function(i) {
+  gsname <- names(dn_go)[i]
+  genes <- dn_go[[i]]
+  gene_scores <- scores[which(names(scores) %in% genes)]
+  top_genes <- names(which(gene_scores< -2))
+  return(top_genes)
+})
+names(topgs_dn) <- names(dn_go)
+gs2net(topgs_dn,y,colorRampPalette(c("darkblue","lightblue"))(n=100))
+topgs_dn
+gset <- c(topgs_up,topgs_dn)
 
 ```
 

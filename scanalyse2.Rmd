@@ -50,16 +50,16 @@ knitr::opts_chunk$set(dev = 'svg') # set output device to svg
 
 ```
 
-```{r,functions}
+```{r,network_functions}
 
-map2color<-function(x,pal,limits=NULL){
-    if(is.null(limits)) limits=range(x)
-    pal[findInterval(x,seq(limits[1],limits[2],length.out=length(pal)+1), all.inside=TRUE)]
+map2color <- function(x,pal,limits=NULL){
+  if (is.null(limits)) limits <- range(x)
+  pal[findInterval(x,seq(limits[1],limits[2],length.out=length(pal)+1), all.inside=TRUE)]
 }
 
 gs2net <- function(gset,em,colfunc=colorRampPalette(c("blue", "white","red"))(n=100)){
-  gset <- gset[which(lapply(gset,length)>0)]
-  mydf <- bind_rows(lapply(gset, as.data.frame.list))
+  gset <- gset[order(names(gset))]
+  mydf <- dplyr::bind_rows(lapply(gset, as.data.frame.list))
   rownames(mydf) <- names(gset)
   j <- apply(mydf,1,function(x) {
     apply(mydf,1,function(y) {
@@ -68,26 +68,147 @@ gs2net <- function(gset,em,colfunc=colorRampPalette(c("blue", "white","red"))(n=
   })
   j[lower.tri(j)] <- NA
   j[lower.tri(j,diag=TRUE)] <- 0
-  jl <- melt(j)
+  jl <- reshape2::melt(j)
   jl <- jl[which(jl$Var1 != jl$Var2),]
   jl <- jl[which(jl$value != 1),]
   jl <- jl[order(-jl$value),]
   jl <- head(jl,length(gset)*2)
-  jl$edgeSize = with(jl, jl$value/sum(jl$value))
+  jl$edgeSize = jl$value/sum(jl$value)
+  nodes <- sort(union(jl[,1],jl[,2]))
   lengths <- unlist(lapply(gset,length))
-  lengths <- sqrt(lengths/sum(lengths)*100)
-  jl$vertexsize <- lengths[match(as.character(jl$Var1),names(lengths))]
+  lengths <- lengths[names(lengths) %in% nodes]
+  nodes <- data.frame("nodes"=nodes,"lengths"=lengths)
+  nodes$vertexsize <- sqrt(nodes$lengths/sum(nodes$lengths) * 100)
+  nodes$es <- em[match(nodes$nodes,em$set),"s.dist"]
+  nodes$colours <- map2color(nodes$es,colfunc)
   jl2 <- apply(jl[,1:2],2,as.character)
-  jlnet = network(jl2)
-#  goid <- sapply(strsplit(names(gset)," "),"[[",1)
-#  es <- em[which(em$GO.ID %in% goid),"ES"]
-  es <- y[match(names(gset),y$set),"s.dist"]
-  colours <- map2color(es,colfunc)
+  jlnet <- network(jl2)
+  jlnet$val <- lapply(jlnet$val, function(x) {
+    vn <- x[[2]]
+    vn <- substr(vn, 1, 60)
+    if (nchar(vn) == 60 ) {
+      vn <- paste(vn,"...",sep="")
+    }
+  x[[2]] <- vn
+  return(x)
+  } )
   plot(jlnet, displaylabels = TRUE, label.col = "steelblue",
        edge.lwd = c(jl$edgeSize) * 100,
        arrowhead.cex = 0,
-       label.cex = 0.8, vertex.border = "white",vertex.cex = jl$vertexsize,
-       vertex.col = colours, edge.col = rgb(0, 0, 0, alpha = 0.5))
+       label.cex = 0.8, vertex.border = "white",vertex.cex = nodes$vertexsize,
+       vertex.col = nodes$colours, edge.col = "black")
+  E1 <- min(nodes$es)
+  E5 <- max(nodes$es)
+  E3 <- mean(c(E1,E5))
+  EE <- c(E1,E3,E5)
+  legcols <- map2color(EE,colfunc)
+  legend("topleft", legend=signif(EE,2) ,title="ES",box.lty=0,
+    fill=legcols, cex=0.8)
+  S1 <- min(nodes$vertexsize)
+  FRAG <- S1/10
+  S5 <- max(nodes$vertexsize)
+  S3 <- mean(c(S1,S5))
+  SS <- c(S1-FRAG,0,S5-FRAG)
+  L1 <- min(nodes$lengths)
+  L5 <- max(nodes$lengths)
+  LL <- paste(" ",c(L1,"",L5))
+  legend("topright", legend=LL ,title="no. genes",box.lty=0,
+    pt.cex=SS*1, cex=0.9 , pch=19,col="darkgray")
+  J1 <- min(jl$edgeSize)
+  FRAG <- J1*3
+  J5 <- max(jl$edgeSize)
+  J3 <- mean(c(J1,J5))
+  JJ <- c(J1,J3,J5)
+  JL <- JJ+FRAG
+  JJ <- c( min(jl$value), mean(c(min(jl$value),max(jl$value))),max(jl$value) )
+  legend("bottomleft", legend=signif(JJ,2) , lwd=JL*50, title="Jaccard",
+    box.lty=0, cex=0.9 , lty=1, col="black")
+}
+
+networkplot <- function(eres,FDR=0.05,n_sets=20) {
+  scores <- eres[[1]][,1]
+  names(scores) <- rownames(eres[[1]])
+  gs <- eres[[2]]
+  eres <- eres[[4]]
+  up <- head(eres[eres$p.adjustANOVA < FDR & eres$s.dist > 0,],n_sets)
+  n_up <- nrow(up)
+  if (n_up >= 5) {
+    up_gs <- up[,1]
+    up_gs <- gs[which(names(gs) %in% up_gs)]
+    topgs_up <- lapply(seq(from=1,to=length(up_gs)),function(i) {
+      gsname <- names(up_gs)[i]
+      genes <- up_gs[[i]]
+      gene_scores <- scores[which(names(scores) %in% genes)]
+      top_genes <- names(which(gene_scores > quantile(gene_scores,c(2/3))))
+      return(top_genes)
+    })
+    names(topgs_up) <- names(up_gs)
+    gs2net(gset=topgs_up,em=eres,colfunc=colorRampPalette(c("pink","darkred"))(n=100))
+  } else {
+    message("Can't plot upregulated sets. Fewer than 5 found.")
+  }
+
+  dn <- head(eres[eres$p.adjustANOVA < FDR & eres$s.dist < 0,],n_sets)
+  n_dn <- nrow(dn)
+  if (n_dn >= 5) {
+    dn_gs <- dn[,1]
+    dn_gs <- gs[which(names(gs) %in% dn_gs)]
+    topgs_dn <- lapply(seq(from=1,to=length(dn_gs)),function(i) {
+      gsname <- names(dn_gs)[i]
+      genes <- dn_gs[[i]]
+      gene_scores <- scores[which(names(scores) %in% genes)]
+      top_genes <- names(which(gene_scores < quantile(gene_scores,c(1/3))))
+      return(top_genes)
+    })
+    names(topgs_dn) <- names(dn_gs)
+    gs2net(gset=topgs_dn,em=eres,colfunc=colorRampPalette(c("darkblue","lightblue"))(n=100))
+  } else {
+    message("Can't plot downregulated sets. Fewer than 5 found.")
+  }
+}
+
+network_genes <- function(eres,FDR=0.05,n_sets=20) {
+  scores <- eres[[1]][,1]
+  names(scores) <- rownames(eres[[1]])
+  gs <- eres[[2]]
+  eres <- eres[[4]]
+
+  up <- head(eres[eres$p.adjustANOVA < FDR & eres$s.dist > 0,],n_sets)
+  n_up <- nrow(up)
+  if (n_up > 0) {
+    up_gs <- up[,1]
+    up_gs <- gs[which(names(gs) %in% up_gs)]
+    topgs_up <- lapply(seq(from=1,to=length(up_gs)),function(i) {
+      gsname <- names(up_gs)[i]
+      genes <- up_gs[[i]]
+      gene_scores <- scores[which(names(scores) %in% genes)]
+      top_genes <- names(which(gene_scores>2))
+      return(top_genes)
+    })
+    names(topgs_up) <- names(up_gs)
+  } else {
+    topgs_up <- NULL
+    message("No significant upregulated sets to show.")
+  }
+
+  dn <- head(eres[eres$p.adjustANOVA < FDR & eres$s.dist < 0,],n_sets)
+  n_dn <- nrow(dn)
+  if (n_dn > 0) {
+    dn_gs <- dn[,1]
+    dn_gs <- gs[which(names(gs) %in% dn_gs)]
+    topgs_dn <- lapply(seq(from=1,to=length(dn_gs)),function(i) {
+      gsname <- names(dn_gs)[i]
+      genes <- dn_gs[[i]]
+      gene_scores <- scores[which(names(scores) %in% genes)]
+      top_genes <- names(which(gene_scores<2))
+      return(top_genes)
+    })
+    names(topgs_dn) <- names(dn_gs)
+  } else {
+    topgs_dn <- NULL
+    message("No significant upregulated sets to show.")
+  }
+  return(list(c("UP genesets"=topgs_up,"DOWN genesets"=topgs_dn)))
 }
 
 ```
@@ -855,7 +976,7 @@ Cells to look at:
 * NK2
 * Macrophage
 
-```{r,KIR3DL2}
+```{r,KIR3DL2_HIVNEG}
 
 sc <- assay(sce)
 table(sc[which(rownames(sc)=="KIR3DL2"),])
@@ -936,7 +1057,7 @@ dflow$KIR3DL2 <- 1
 kdf <- rbind(dfhi,dfmed,dflow)
 rownames(kdf) <- colnames(kx)
 
-## focus on HIV negative
+## focus on HIV negative ( 2 levels only)
 kdf1 <- subset(kdf,hiv_status==0 & KIR3DL2!=2)
 kx1 <- kx[,which(colnames(kx) %in% rownames(kdf1))]
 colSums(kx1)
@@ -944,6 +1065,7 @@ plotMDS(kx1)
 
 kx1f <- kx1[which(rowMeans(kx1)>=5),]
 kx1f <- kx1f+1
+
 dds <- DESeqDataSetFromMatrix(countData = kx1f , colData = kdf1, design = ~ batch + KIR3DL2)
 res <- DESeq(dds)
 z <- results(res)
@@ -951,11 +1073,85 @@ vsd <- vst(dds, blind=FALSE)
 zz <- cbind(as.data.frame(z),assay(vsd),kx1f)
 kx1de <- as.data.frame(zz[order(zz$pvalue),])
 
-kx1de[1:50,1:6] |> kbl(caption="KIR3DL2 associated genes in HIV- cells") |> kable_paper("hover", full_width = F)
+kx1de[1:50,1:6] |>
+  kbl(caption="KIR3DL2 associated genes in HIV- cells (low vs high)") |>
+  kable_paper("hover", full_width = F)
 
-write.table(x=kx1de,file="KIR3DL2_de_hivneg.tsv",sep="\t",quote=FALSE)
+write.table(x=kx1de,file="KIR3DL2_de_hivneg_2LB.tsv",sep="\t",quote=FALSE)
+
+## focus on HIV negative ( 3 levels)
+kdf1 <- subset(kdf,hiv_status==0)
+kx1 <- kx[,which(colnames(kx) %in% rownames(kdf1))]
+colSums(kx1)
+plotMDS(kx1)
+
+kx1f <- kx1[which(rowMeans(kx1)>=5),]
+kx1f <- kx1f+1
+
+dds <- DESeqDataSetFromMatrix(countData = kx1f , colData = kdf1, design = ~ batch + KIR3DL2)
+res <- DESeq(dds)
+z <- results(res)
+vsd <- vst(dds, blind=FALSE)
+zz <- cbind(as.data.frame(z),assay(vsd),kx1f)
+kx1de <- as.data.frame(zz[order(zz$pvalue),])
+
+kx1de[1:50,1:6] |>
+  kbl(caption="KIR3DL2 associated genes in HIV- cells (3 levels)") |>
+  kable_paper("hover", full_width = F)
+
+write.table(x=kx1de,file="KIR3DL2_de_hivneg_3LB.tsv",sep="\t",quote=FALSE)
+
+## focus on HIV negative - 2 levels only - use sample pairing
+kdf1 <- subset(kdf,hiv_status==0 & KIR3DL2!=2)
+kx1 <- kx[,which(colnames(kx) %in% rownames(kdf1))]
+colSums(kx1)
+plotMDS(kx1)
+
+kx1f <- kx1[which(rowMeans(kx1)>=5),]
+kx1f <- kx1f+1
+
+dds <- DESeqDataSetFromMatrix(countData = kx1f , colData = kdf1, design = ~ patient_id + KIR3DL2)
+res <- DESeq(dds)
+z <- results(res)
+vsd <- vst(dds, blind=FALSE)
+zz <- cbind(as.data.frame(z),assay(vsd),kx1f)
+kx1de <- as.data.frame(zz[order(zz$pvalue),])
+
+kx1de[1:50,1:6] |>
+  kbl(caption="KIR3DL2 associated genes in HIV- cells (low vs high) with patient level pairing") |>
+  kable_paper("hover", full_width = F)
+
+write.table(x=kx1de,file="KIR3DL2_de_hivneg_2LP.tsv",sep="\t",quote=FALSE)
+
+## focus on HIV negative - 3 levels - use sample pairing
+kdf1 <- subset(kdf,hiv_status==0 )
+kx1 <- kx[,which(colnames(kx) %in% rownames(kdf1))]
+colSums(kx1)
+plotMDS(kx1)
+
+kx1f <- kx1[which(rowMeans(kx1)>=5),]
+kx1f <- kx1f+1
+
+dds <- DESeqDataSetFromMatrix(countData = kx1f , colData = kdf1, design = ~ patient_id + KIR3DL2)
+res <- DESeq(dds)
+z <- results(res)
+vsd <- vst(dds, blind=FALSE)
+zz <- cbind(as.data.frame(z),assay(vsd),kx1f)
+kx1de <- as.data.frame(zz[order(zz$pvalue),])
+
+kx1de[1:50,1:6] |>
+  kbl(caption="KIR3DL2 associated genes in HIV- cells (3 levels) with patient level pairing") |>
+  kable_paper("hover", full_width = F)
+
+write.table(x=kx1de,file="KIR3DL2_de_hivneg_3LP.tsv",sep="\t",quote=FALSE)
+
+```
 
 ## select HIV positive
+
+```{r,KIR3DL2_HIVPOS}
+
+## 2 levels - low vs high
 kdf2 <- subset(kdf,hiv_status==1 & KIR3DL2!=2)
 kx2 <- kx[,which(colnames(kx) %in% rownames(kdf2))]
 colSums(kx2)
@@ -970,9 +1166,66 @@ vsd <- vst(dds, blind=FALSE)
 zz <- cbind(as.data.frame(z),assay(vsd),kx2f)
 kx2de <- as.data.frame(zz[order(zz$pvalue),])
 
-kx2de[1:50,1:6] |> kbl(caption="KIR3DL2 associated genes in HIV+ cells") |> kable_paper("hover", full_width = F)
+kx2de[1:50,1:6] |> kbl(caption="KIR3DL2 associated genes in HIV+ cells - low vs high - batch corrected") |> kable_paper("hover", full_width = F)
 
-write.table(x=kx2de,file="KIR3DL2_de_hivpos.tsv",sep="\t",quote=FALSE)
+write.table(x=kx2de,file="KIR3DL2_de_hivpos_2LB.tsv",sep="\t",quote=FALSE)
+
+## 3 levels of KIR3DL2 expression
+kdf2 <- subset(kdf,hiv_status==1 )
+kx2 <- kx[,which(colnames(kx) %in% rownames(kdf2))]
+colSums(kx2)
+plotMDS(kx2)
+
+kx2f <- kx2[which(rowMeans(kx2)>=5),]
+kx2f <- kx2f+1
+dds <- DESeqDataSetFromMatrix(countData = kx2f , colData = kdf2, design = ~ batch + KIR3DL2)
+res <- DESeq(dds)
+z <- results(res)
+vsd <- vst(dds, blind=FALSE)
+zz <- cbind(as.data.frame(z),assay(vsd),kx2f)
+kx2de <- as.data.frame(zz[order(zz$pvalue),])
+
+kx2de[1:50,1:6] |> kbl(caption="KIR3DL2 associated genes in HIV+ cells - 3 levels") |> kable_paper("hover", full_width = F)
+
+write.table(x=kx2de,file="KIR3DL2_de_hivpos_3LB.tsv",sep="\t",quote=FALSE)
+
+## 2 levels - low vs high - using patient level pairing
+kdf2 <- subset(kdf,hiv_status==1 & KIR3DL2!=2)
+kx2 <- kx[,which(colnames(kx) %in% rownames(kdf2))]
+colSums(kx2)
+plotMDS(kx2)
+
+kx2f <- kx2[which(rowMeans(kx2)>=5),]
+kx2f <- kx2f+1
+dds <- DESeqDataSetFromMatrix(countData = kx2f , colData = kdf2, design = ~ patient_id + KIR3DL2)
+res <- DESeq(dds)
+z <- results(res)
+vsd <- vst(dds, blind=FALSE)
+zz <- cbind(as.data.frame(z),assay(vsd),kx2f)
+kx2de <- as.data.frame(zz[order(zz$pvalue),])
+
+kx2de[1:50,1:6] |> kbl(caption="KIR3DL2 associated genes in HIV+ cells - low vs high with patient level pairing") |> kable_paper("hover", full_width = F)
+
+write.table(x=kx2de,file="KIR3DL2_de_hivpos_2LP.tsv",sep="\t",quote=FALSE)
+
+## 3 levels - low meium high - using patient level pairing
+kdf2 <- subset(kdf,hiv_status==1 )
+kx2 <- kx[,which(colnames(kx) %in% rownames(kdf2))]
+colSums(kx2)
+plotMDS(kx2)
+
+kx2f <- kx2[which(rowMeans(kx2)>=5),]
+kx2f <- kx2f+1
+dds <- DESeqDataSetFromMatrix(countData = kx2f , colData = kdf2, design = ~ patient_id + KIR3DL2)
+res <- DESeq(dds)
+z <- results(res)
+vsd <- vst(dds, blind=FALSE)
+zz <- cbind(as.data.frame(z),assay(vsd),kx2f)
+kx2de <- as.data.frame(zz[order(zz$pvalue),])
+
+kx2de[1:50,1:6] |> kbl(caption="KIR3DL2 associated genes in HIV+ cells - 3 level with patient level pairing") |> kable_paper("hover", full_width = F)
+
+write.table(x=kx2de,file="KIR3DL2_de_hivpos_3LP.tsv",sep="\t",quote=FALSE)
 
 ```
 
@@ -981,42 +1234,104 @@ Now make a model that incorporates HIV+ and HIV- cells.
 
 ```{r,KIR3DL3}
 
+
 kdf
 head(kx,2)
 
+# 2 levels with batch
 kdf3 <- subset(kdf, KIR3DL2!=2)
-
 kx3 <- kx[,which(colnames(kx) %in% rownames(kdf3))]
-
 colSums(kx3)
 plotMDS(kx3)
-
 dim(kx3)
 kx3f <- kx3[which(rowMeans(kx3)>=5),]
 dim(kx3f)
-
-# hiv-
 dds <- DESeqDataSetFromMatrix(countData = kx3f , colData = kdf3, design = ~ batch + hiv_status + KIR3DL2)
-
 res <- DESeq(dds)
 z <- results(res)
 vsd <- vst(dds, blind=FALSE)
 zz <- cbind(as.data.frame(z),assay(vsd),kx3f)
 kx3de <- as.data.frame(zz[order(zz$pvalue),])
 
-kx3de[1:50,1:6] |> kbl(caption="KIR3DL2 associated genes irrespective of HIV status") |> kable_paper("hover", full_width = F)
+kx3de[1:50,1:6] |> kbl(caption="KIR3DL2 associated genes irrespective of HIV status - 2 levels - batch correction") |> kable_paper("hover", full_width = F)
+
+write.table(x=kx2de,file="KIR3DL2_de_hivall_2LB.tsv",sep="\t",quote=FALSE)
+
+# 3 levels with batch
+kdf3 <- kdf
+kx3 <- kx[,which(colnames(kx) %in% rownames(kdf3))]
+colSums(kx3)
+plotMDS(kx3)
+dim(kx3)
+kx3f <- kx3[which(rowMeans(kx3)>=5),]
+dim(kx3f)
+dds <- DESeqDataSetFromMatrix(countData = kx3f , colData = kdf3, design = ~ batch + hiv_status + KIR3DL2)
+res <- DESeq(dds)
+z <- results(res)
+vsd <- vst(dds, blind=FALSE)
+zz <- cbind(as.data.frame(z),assay(vsd),kx3f)
+kx3de <- as.data.frame(zz[order(zz$pvalue),])
+
+kx3de[1:50,1:6] |> kbl(caption="KIR3DL2 associated genes irrespective of HIV status - 3 levels - batch correction") |> kable_paper("hover", full_width = F)
+
+write.table(x=kx2de,file="KIR3DL2_de_hivall_3LB.tsv",sep="\t",quote=FALSE)
+
+# 2 levels with patient level pairing
+kdf3 <- subset(kdf, KIR3DL2!=2)
+kx3 <- kx[,which(colnames(kx) %in% rownames(kdf3))]
+colSums(kx3)
+plotMDS(kx3)
+dim(kx3)
+kx3f <- kx3[which(rowMeans(kx3)>=5),]
+dim(kx3f)
+dds <- DESeqDataSetFromMatrix(countData = kx3f , colData = kdf3, design = ~ patient_id + KIR3DL2)
+res <- DESeq(dds)
+z <- results(res)
+vsd <- vst(dds, blind=FALSE)
+zz <- cbind(as.data.frame(z),assay(vsd),kx3f)
+kx3de <- as.data.frame(zz[order(zz$pvalue),])
+
+kx3de[1:50,1:6] |> kbl(caption="KIR3DL2 associated genes irrespective of HIV status - 2 levels - patient level pairing") |> kable_paper("hover", full_width = F)
+
+write.table(x=kx2de,file="KIR3DL2_de_hivall_2LP.tsv",sep="\t",quote=FALSE)
+
+# 3 levels with patient level pairing
+kdf3 <- kdf
+kx3 <- kx[,which(colnames(kx) %in% rownames(kdf3))]
+colSums(kx3)
+plotMDS(kx3)
+dim(kx3)
+kx3f <- kx3[which(rowMeans(kx3)>=5),]
+dim(kx3f)
+dds <- DESeqDataSetFromMatrix(countData = kx3f , colData = kdf3, design = ~ patient_id + KIR3DL2)
+res <- DESeq(dds)
+z <- results(res)
+vsd <- vst(dds, blind=FALSE)
+zz <- cbind(as.data.frame(z),assay(vsd),kx3f)
+kx3de <- as.data.frame(zz[order(zz$pvalue),])
+
+kx3de[1:50,1:6] |> kbl(caption="KIR3DL2 associated genes irrespective of HIV status - 3 levels - patient level pairing") |> kable_paper("hover", full_width = F)
+
+write.table(x=kx2de,file="KIR3DL2_de_hivall_3LP.tsv",sep="\t",quote=FALSE)
 
 ```
 
-Pathway analysis.
+## Pathway analysiss of gene profiles that correlate with KIR3DL2
+
+This analysis is limited to the 3 level analysis with patient pairing.
 
 ```{r,kirdl3_pw_neg}
 
 k1 <- mitch_import(kx1de,DEtype="deseq2")
 k1m <- mitch_calc(k1,genesets=go,minsetsize=5,cores=16,priority="effect")
 
-head(subset(k1m$enrichment_result, s.dist > 0),20) |> kbl(caption="top enrichments (positive correl)") |> kable_paper("hover", full_width = F)
-head(subset(k1m$enrichment_result, s.dist < 0),20) |> kbl(caption="top enrichments (negative correl)") |> kable_paper("hover", full_width = F)
+head(subset(k1m$enrichment_result, p.adjustANOVA < 0.05 & s.dist > 0 ),20) |>
+  kbl(caption="top enrichments (positive correl)") |>
+  kable_paper("hover", full_width = F)
+
+head(subset(k1m$enrichment_result, p.adjustANOVA < 0.05 & s.dist < 0 ),20)  |>
+  kbl(caption="top enrichments (negative correl)") |>
+  kable_paper("hover", full_width = F)
 
 up <- head(subset(k1m$enrichment_result, s.dist > 0 & p.adjustANOVA < 0.05),20)
 dn <- head(subset(k1m$enrichment_result, s.dist < 0 & p.adjustANOVA < 0.05),20)
@@ -1031,62 +1346,15 @@ mitch_plots(k1m,outfile="KIR3DL2_assoc_hivneg.pdf")
 
 ```
 
-herenow network diagram
+Network diagram
 
-```{r,kirdl3_pwn_et,fig.width=13,fig.height=9}
+```{r,kirdl3_pwn_net,fig.width=14,fig.height=9}
 
-par(mar = c(5.1, 4.1, 4.1, 2.1))
+networkplot(eres=k1m,FDR=0.05,n_sets=20)
+network_genes(eres=k1m,FDR=0.05,n_sets=20)
 
-### Network diagram
-x <- kx1de
-y <- k1m$enrichment_result
-
-#go <- gmt_import("go_2024-11.gmt")
-goids <- sapply(strsplit(names(go)," "),"[[",1)
-
-# up 20
-scores <- x$stat
-names(scores) <- rownames(x)
-up <- head(subset(y,p.adjustANOVA<0.05 & s.dist > 0),20)
-
-up |> kbl(caption="Top upregulated pathways") |> kable_paper("hover", full_width = F)
-
-up_go <- sapply(strsplit(up[,1]," "),"[[",1)
-up_go <- go[which(goids %in% up_go)]
-topgs_up <- lapply(1:length(up_go),function(i) {
-  gsname <- names(up_go)[i]
-  genes <- up_go[[i]]
-  gene_scores <- scores[which(names(scores) %in% genes)]
-  top_genes <- names(which(gene_scores>2))
-  return(top_genes)
-})
-names(topgs_up) <- names(up_go)
-gs2net(topgs_up,y,colorRampPalette(c("pink","darkred"))(n=100))
-topgs_up
-
-#dn 20
-dn <- head(subset(y,p.adjustANOVA<0.05 & s.dist < 0),20)
-
-dn |> kbl(caption="Top downregulated pathways")|> kable_paper("hover", full_width = F)
-
-dn_go <- sapply(strsplit(dn[,1]," "),"[[",1)
-#dn_go <- dn[,1]
-dn_go <- go[which(goids %in% dn_go)]
-topgs_dn <- lapply(1:length(dn_go),function(i) {
-  gsname <- names(dn_go)[i]
-  genes <- dn_go[[i]]
-  gene_scores <- scores[which(names(scores) %in% genes)]
-  top_genes <- names(which(gene_scores< -2))
-  return(top_genes)
-})
-names(topgs_dn) <- names(dn_go)
-gs2net(topgs_dn,y,colorRampPalette(c("darkblue","lightblue"))(n=100))
-topgs_dn
-gset <- c(topgs_up,topgs_dn)
-
-if ( ! file.exists("KIR3DL2_assoc_hivneg.html") ) {
-  mitch_report(res=k1m,outfile="KIR3DL2_assoc_hivneg.html")
-}
+networkplot(eres=k1m,FDR=0.05,n_sets=30)
+network_genes(eres=k1m,FDR=0.05,n_sets=30)
 
 ```
 
@@ -1097,8 +1365,13 @@ Now in HIV+
 k2 <- mitch_import(kx2de,DEtype="deseq2")
 k2m <- mitch_calc(k2,genesets=go,minsetsize=5,cores=16,priority="effect")
 
-head(subset(k2m$enrichment_result, s.dist > 0),20) |> kbl(caption="top enrichments (positive correl)")  |> kable_paper("hover", full_width = F)
-head(subset(k2m$enrichment_result, s.dist < 0),20) |> kbl(caption="top enrichments (negative correl)") |> kable_paper("hover", full_width = F)
+head(subset(k2m$enrichment_result, s.dist > 0 & p.adjustANOVA < 0.05 ),20) |>
+  kbl(caption="top enrichments (positive correl)")
+  |> kable_paper("hover", full_width = F)
+
+head(subset(k2m$enrichment_result, s.dist < 0 & p.adjustANOVA < 0.05 ),20) |>
+  kbl(caption="top enrichments (negative correl)") |>
+  kable_paper("hover", full_width = F)
 
 up <- head(subset(k2m$enrichment_result, s.dist > 0 & p.adjustANOVA < 0.05),20)
 dn <- head(subset(k2m$enrichment_result, s.dist < 0 & p.adjustANOVA < 0.05),20)
@@ -1123,49 +1396,11 @@ Network diagram
 
 ```{r,kirdl3_pw_pos_net,fig.width=13,fig.height=9}
 
-### Network diagram
-x <- kx2de
-y <- k2m$enrichment_result
+networkplot(eres=k2m,FDR=0.05,n_sets=20)
+network_genes(eres=k2m,FDR=0.05,n_sets=20)
 
-# up 20
-scores <- x$stat
-names(scores) <- rownames(x)
-up <- head(subset(y,p.adjustANOVA<0.05 & s.dist > 0),20)
-
-up |> kbl(caption="Top upregulated pathways") |> kable_paper("hover", full_width = F)
-
-up_go <- sapply(strsplit(up[,1]," "),"[[",1)
-up_go <- go[which(goids %in% up_go)]
-topgs_up <- lapply(1:length(up_go),function(i) {
-  gsname <- names(up_go)[i]
-  genes <- up_go[[i]]
-  gene_scores <- scores[which(names(scores) %in% genes)]
-  top_genes <- names(which(gene_scores>2))
-  return(top_genes)
-})
-names(topgs_up) <- names(up_go)
-gs2net(topgs_up,y,colorRampPalette(c("pink","darkred"))(n=100))
-topgs_up
-
-#dn 20
-dn <- head(subset(y,p.adjustANOVA<0.05 & s.dist < 0),20)
-
-dn |> kbl(caption="Top downregulated pathways")|> kable_paper("hover", full_width = F)
-
-dn_go <- sapply(strsplit(dn[,1]," "),"[[",1)
-#dn_go <- dn[,1]
-dn_go <- go[which(goids %in% dn_go)]
-topgs_dn <- lapply(1:length(dn_go),function(i) {
-  gsname <- names(dn_go)[i]
-  genes <- dn_go[[i]]
-  gene_scores <- scores[which(names(scores) %in% genes)]
-  top_genes <- names(which(gene_scores< -2))
-  return(top_genes)
-})
-names(topgs_dn) <- names(dn_go)
-gs2net(topgs_dn,y,colorRampPalette(c("darkblue","lightblue"))(n=100))
-topgs_dn
-gset <- c(topgs_up,topgs_dn)
+networkplot(eres=k2m,FDR=0.05,n_sets=30)
+network_genes(eres=k2m,FDR=0.05,n_sets=30)
 
 ```
 
@@ -1181,7 +1416,9 @@ dim(km)
 
 kmm <- mitch_calc(km,genesets=go,minsetsize=5,cores=16,priority="effect")
 
-head(subset(kmm$enrichment_result, s.dist > 0),20) |> kbl(caption="top multi-enrichment") |> kable_paper("hover", full_width = F)
+head(subset(kmm$enrichment_result, p.adjustMANOVA < 0.05),20) |>
+  kbl(caption="top multi-enrichment") |>
+  kable_paper("hover", full_width = F)
 
 mitch_plots(kmm,outfile="KIR3DL2_assoc_hivnegpos.pdf")
 
@@ -1198,8 +1435,13 @@ Pathway analysis irrespective of HIV status.
 k3 <- mitch_import(kx3de,DEtype="deseq2")
 k3m <- mitch_calc(k3,genesets=go,minsetsize=5,cores=16,priority="effect")
 
-head(subset(k3m$enrichment_result, s.dist > 0),20) |> kbl(caption="top enrichments (positive correl)") |> kable_paper("hover", full_width = F)
-head(subset(k3m$enrichment_result, s.dist < 0),20) |> kbl(caption="top enrichments (negative correl)") |> kable_paper("hover", full_width = F)
+head(subset(k3m$enrichment_result, s.dist > 0 & p.adjustANOVA < 0.05),20) |>
+  kbl(caption="top enrichments (positive correl)") |>
+  kable_paper("hover", full_width = F)
+
+head(subset(k3m$enrichment_result, s.dist < 0 & p.adjustANOVA < 0.05),20) |>
+  kbl(caption="top enrichments (negative correl)") |>
+  kable_paper("hover", full_width = F)
 
 up <- head(subset(k3m$enrichment_result, s.dist > 0 & p.adjustANOVA < 0.05),20)
 dn <- head(subset(k3m$enrichment_result, s.dist < 0 & p.adjustANOVA < 0.05),20)
@@ -1211,6 +1453,16 @@ gsn <- substr(top$set, start = 1, stop = 70 )
 barplot(top$s.dist,horiz=TRUE,las=1,xlab="ES",names.arg=gsn,cex.names=0.6,main="HIV neg")
 
 mitch_plots(k3m,outfile="KIR3DL2_assoc_all.pdf")
+
+```
+
+Network diagram
+
+```{r,kirdl3_pw2_net,fig.width=13,fig.height=9}
+
+networkplot(eres=k3m,FDR=0.05,n_sets=20)
+
+network_genes(eres=k3m,FDR=0.05,n_sets=20)
 
 ```
 
